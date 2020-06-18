@@ -1,0 +1,8 @@
+[defaults]
+roles_path = .:../../ansible
+remote_tmp = /tmp/$USER/ansible
+
+[ssh_connection]
+ssh_args = -F ssh.cfg
+control_path = ~/.ssh/mux-%r@%h:%p
+pipelining=True

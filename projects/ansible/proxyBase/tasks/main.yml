@@ -1,0 +1,54 @@
+- name: Create product directory
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  with_items:
+    - "{{ HOME }}"
+    - "/{{ USER }}"
+    - "/{{ USER }}/ssl"
+    - "/{{ USER }}/ssl/private"
+    - "/{{ USER }}/log/nginx"
+    - /etc/nginx/upstream-hosts
+    - /etc/nginx/conf.d
+
+- name: Copy executables to remote host
+  copy:
+    src: installDhParams.sh
+    dest: "{{ HOME }}/installDhParams.sh"
+    owner: "{{ USER }}"
+    mode: 0700
+
+- name: Copy resources to remote host
+  copy:
+    src: nginx.logrotate
+    dest: "{{ HOME }}/nginx.logrotate"
+    owner: "{{ USER }}"
+    mode: 0660
+
+- name: Copy root cert to remote host
+  become: true
+  copy:
+    src: "{{ rootCertificate }}"
+    dest: /etc/ssl/certs/
+    owner: "{{ USER }}"
+    mode: 0644
+
+- name: Copy ssl cert key to remote host
+  become: true
+  copy:
+    src: "{{ sslCertificateKey }}"
+    dest: "/{{ USER }}/ssl/private/"
+    mode: 0600
+
+- name: Copy public cert to remote host
+  become: true
+  copy:
+    src: "{{ sslCertificate }}"
+    dest: /etc/ssl/certs/
+    mode: 0644
+
+

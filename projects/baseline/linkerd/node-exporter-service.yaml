@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-exporter
+  namespace: linkerd
+  annotations:
+    prometheus.io/scrape: "true"
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9100
+      protocol: TCP
+      targetPort: 9100
+  selector:
+    k8s-app: node-exporter 

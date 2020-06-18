@@ -1,0 +1,44 @@
+---
+- hosts: all
+
+  pre_tasks:
+  - set_fact:
+      node_exporter_version: "0.17.0"
+      mongodb_exporter_version: "0.6.2.3"
+      mongodb_exporter_sub_version: "0.6.2"
+
+  roles:
+    - role: fluentbit
+    - role: prometheus
+    - role: prometheus-mongodb
+
+  tasks:
+  - name: Install the fluentbit configurations
+    become: yes
+    copy:
+      src: "{{ item }}"
+      dest: "/etc/td-agent-bit/{{ item }}"
+    with_items:
+      - parsers.conf
+      - td-agent-bit.conf
+  
+# Start fluentbit service
+  - name: Starting fluentbit service
+    become: yes
+    service:
+      name: td-agent-bit
+      enabled: yes
+      state: started
+
+  - name: Install the mongodb-exporter configuration file
+    become: yes
+    template: 
+      src: mongodb_exporter.conf.j2
+      dest: /etc/systemd/system/mongodb_exporter.d/mongodb_exporter.conf
+
+  - name: Start the prometheus mongodb exporter
+    become: yes
+    service:
+      name: mongodb_exporter
+      enabled: yes
+      state: started

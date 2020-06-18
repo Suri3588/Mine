@@ -1,0 +1,181 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: image-data-service
+  namespace: nucleus
+  labels:
+    app.kubernetes.io/name: image-data-service
+    app.kubernetes.io/part-of: nucleus
+spec:
+  replicas: 12 # Check HorizontalPodAutoscaler if you going to change this value should match with the min 
+  strategy:
+    rollingUpdate:
+      maxSurge: 12
+      maxUnavailable: 4
+  minReadySeconds: 5
+  template:
+    metadata:
+      labels:
+        app: image-data-service
+        deployment: {{ resourceGroup }}
+      annotations:
+        fluentbit.io/parser: nucleus
+        linkerd.io/inject: enabled
+        config.linkerd.io/proxy-cpu-limit: "2" # Check the resources section if you are changing this value.
+        config.linkerd.io/proxy-cpu-request: "0.1" # Check the resources section if you are changing this value.
+        config.linkerd.io/proxy-memory-limit: 6Gi # Check the resources section if you are changing this value.
+        config.linkerd.io/proxy-memory-request: 200Mi # Check the resources section if you are changing this value.
+    spec:
+
+# For now image data service, does integrations (push to pacs uses some methods here), UI (image
+# frame dicom upload and others), as well as some jobs that runs here, therefore it is hard to
+# define where it should run, moreover in the load test we identify that during UI high usage would impact
+# the ingestion speed. Based on that we decided to let image data service be scheduled by k8s to run
+# in any node. This change resulted in a grow in the ingestion speed from 800 to +1800 an hour.
+# 
+#   Note: Maybe in the version 21 we can move this service to UI or other  pool once some of the
+# load is been moved to other services.
+#
+
+#      nodeSelector:
+#        agentpool: dataprocpool
+      hostAliases:
+      {% for mongo in mongos %}
+      - ip: "{{ mongo.ipAddress }}"
+        hostnames:
+        - "{{ mongo.name }}"
+      {% endfor %}
+      containers:
+      - name: image-data-service
+        image: {{ dockerRegistry }}{{ radconnectImage }}
+        imagePullPolicy: IfNotPresent
+# The readinessProbe and livenessProbe are used to by k8s to decide to start sending traffic or
+# restart a Pod. Ideally, we would have a /healthz endpoints to check if the application is ready to
+# receive traffic. We do not have one today watch the issue https://jira.statrad.com/browse/NIX-14801
+# To see when this will be properly implemented. By now we are taking advantages of meteor default
+# behave calling the path `/` that returns http 200 Ok if the app is in a working state and fail or
+# takes a long time to respond if the application is having some problem.
+#
+# Note:
+# initialDelaySeconds delay showed up to be important, and this application takes a long time to start
+# working and if we define a short time it will lead to an infinity restart and the Pod would never
+# start receiving traffic, 120 seems to be adequate for the moment, note that we used the same
+# value for the shutdown (see: preStop in lifecycle)
+#
+        readinessProbe:
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          httpGet:
+            path: /
+            port: 80
+        livenessProbe:
+          httpGet:
+           path: /
+           port: 80
+          failureThreshold: 10
+          periodSeconds: 10
+          initialDelaySeconds:  150
+          timeoutSeconds: 5
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/bash", "-c", "sleep 120"] # This is to improve a graceful shutdown
+        command:
+        - /bin/bash
+        - -c
+        - cd /service/bundle&&node --max-old-space-size=7175 main.js    
+# Container is not allowed to use more than its memory limit. If a Container allocates more memory 
+# than its limit, the container becomes a *candidate* for termination. 
+# Note: 
+# That is why we limited the memory to a smaller limit than we may consider ideal. During the load
+# test we have noticed containers using 4G of memory even with the 2G limitation, so we decided to 
+# add the container to the restart queue before it goes to high in memory usage.
+#
+#
+# Important:
+#    If you are changing this values visit the annotations config.linkerd.io/proxy-memory* and
+#    config.linkerd.io/proxy-cpu* in this template, also evaluate if the preStop needs to change.
+#    Finally visit the HorizontalPodAutoscaler at the end of this document to recalibrate the
+#    points to start scaling up and down, all the values set at the moment have been empirically
+#    added by simulating production-like traffic and watching the resource usage.
+#
+        resources:
+          requests:
+            cpu: "0.1"
+            memory: "100Mi"
+          limits:
+            cpu: "2"
+            memory: "6Gi"
+        envFrom:
+        - configMapRef:
+            name: shared-config
+        - configMapRef:
+            name: image-data-service-config
+        env:
+        - name: MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: MONGO_URL
+        - name: MONGO_OPLOG_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: MONGO_OPLOG_URL
+        - name: NUCLEUS_INGESTION_MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: NUCLEUS_INGESTION_MONGO_URL
+        - name: METEOR_SETTINGS
+          valueFrom:
+            secretKeyRef:
+              name: image-service-secret
+              key: METEOR_SETTINGS
+        - name: COMPLETE_REGISTRATION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: complete-registration-secret
+              key: COMPLETE_REGISTRATION_SECRET
+        - name: APP_INSIGHTS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-insights-secrets
+              key: APP_INSIGHTS_KEY
+      imagePullSecrets:
+      - name: regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: image-data-service
+  namespace: nucleus
+  labels:
+    app.kubernetes.io/name: image-data-service
+    app.kubernetes.io/part-of: nucleus
+spec:
+  ports:
+  - port: 80
+  selector:
+    app: image-data-service
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: image-data-service
+  namespace: nucleus
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: image-data-service
+  minReplicas: 36 # With the last fixes this service does not scale easy, and a higher number of pods increase the ingestion, there for we decided to set it this high
+  maxReplicas: 48
+  metrics:
+  - type: Resource # Important: Add values to scale before the Pod get too overloaded, the application takes a long time to star responding ti the request so is is important to add new Pods to address the traffic before the old ones get into a non working state.
+    resource:
+      name: cpu # CPU showed up to be the best metric for this autoscaling that may no be the case for all services, we came up with this value by empirically watching staging2 with a production like load (Hubs environment) this metric may change depending on the environment and the kind of traffic it need to handle 
+      target:
+        type: Utilization
+        averageValue: 600m 

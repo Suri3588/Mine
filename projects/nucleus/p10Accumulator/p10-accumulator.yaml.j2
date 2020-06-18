@@ -1,0 +1,76 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: p10-accumulator
+  namespace: nucleus
+  labels:
+    app.kubernetes.io/name: p10-accumulator
+    app.kubernetes.io/part-of: nucleus
+spec:
+  replicas: 2
+  strategy:
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 0
+  minReadySeconds: 5
+  template:
+    metadata:
+      labels:
+        app: p10-accumulator
+        deployment: {{ resourceGroup }}
+      annotations:
+        fluentbit.io/parser: nucleus
+        linkerd.io/inject: enabled
+    spec:
+      nodeSelector:
+        agentpool: ingestpool
+      hostAliases:
+      {% for mongo in mongos %}
+      - ip: "{{ mongo.ipAddress }}"
+        hostnames:
+        - "{{ mongo.name }}"
+      {% endfor %}
+      containers:
+      - name: p10-accumulator
+        image: {{ dockerRegistry }}{{ radconnectImage }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - node
+        args:
+        - "--expose-gc"
+        - "main.js"
+        resources:
+          requests:
+            cpu: "0.1"
+            memory: "200Mi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+        envFrom:
+        - configMapRef:
+            name: shared-config
+        - configMapRef:
+            name: p10-accumulator-config
+        env:
+        - name: MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: MONGO_URL
+        - name: NUCLEUS_INGESTION_MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: NUCLEUS_INGESTION_MONGO_URL
+        - name: METEOR_SETTINGS
+          valueFrom:
+            secretKeyRef:
+              name: processing-pipeline-secrets
+              key: METEOR_SETTINGS
+        - name: APP_INSIGHTS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-insights-secrets
+              key: APP_INSIGHTS_KEY
+      imagePullSecrets:
+      - name: regcred

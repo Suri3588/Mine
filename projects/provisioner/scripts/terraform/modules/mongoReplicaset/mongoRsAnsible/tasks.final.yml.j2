@@ -1,0 +1,8 @@
+{% include 'tasks.main.yml' %}
+
+  # creates users, but auth isn't required until high security config is instantiated
+  - name: Seed exporter user
+    shell: mongo --quiet --host {{ mongoReplicaSetName }}/{% for host in parentHosts %}{{ host.name }}:{{ mongoDbPort }}{%- if not loop.last %},{% endif %}{% endfor %} admin < seed-exporter-user.js && touch ~/seed-exporter-users-complete
+    args:
+      creates: ~/seed-exporter-users-complete
+    ignore_errors: true

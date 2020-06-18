@@ -1,0 +1,115 @@
+variable "kubernetes_version" {
+  type = string
+  default = "1.14.8"
+}
+
+variable "clusterViewerGuid" {
+  type = string
+}
+
+variable "clusterAdminGuid" {
+  type = string
+}
+
+variable "sshPublicKey" {
+  type = string
+}
+
+variable "regaksPublicKey" {
+  type = string
+}
+
+variable "isSharedService" {
+  type = string
+  default = "{{ isSharedService }}"
+}
+
+variable "login" {
+  type = string
+  default = "nucleus"
+}
+
+variable "classCPlus" {
+  type = string
+  default = "{{ classCPlus }}"
+}
+
+variable "classCPlusOffset" {
+  type = string
+  default = "{{ classCPlusOffset }}"
+}
+
+variable "ingressIp" {
+  type = string
+  default = "{{ internalIngressIp }}"
+}
+
+variable "mongo1Ip" {
+  type = string
+  default = "{{ mongos[0]['ipAddress'] }}"
+}
+
+variable "mongo2Ip" {
+  type = string
+  default = "{{ mongos[1]['ipAddress'] }}"
+}
+
+variable "mongo3Ip" {
+  type = string
+  default = "{{ mongos[2]['ipAddress'] }}"
+}
+
+variable "passthruIp" {
+  type = string
+  default = "{{ passthruIp }}"
+}
+
+variable "proxyServerName" {
+  type = string
+  default = "{{ passthruIp }}"
+}
+
+variable "deploymentDir" {
+  type = string
+  description = "populated from the TF_VAR_deploymentDir environment variable set in extract-secrets.sh"
+}
+
+variable "projectsDir" {
+  type = string
+  default = "{{ projectsDir }}"
+}
+
+variable "passthruSecretsFile" {
+  type = string
+  default = "{{ secretsDir }}/passthru.json"
+}
+
+variable "passthruLocalSecretsFile" {
+  type = string
+  default = "{{ secretsDir }}/passthru-local.json"
+}
+
+variable "jumpboxSecretsFile" {
+  type = string
+  default = "{{ secretsDir }}/jumpbox.json"
+}
+
+variable "rootCertificate" {
+  type = string
+  default = "{{ secretsDir }}/root.crt"
+}
+
+variable "sshPrivateKeyFile" {
+  type = string
+  default = "{{ secretsDir }}/ssh_rsa"
+}
+
+variable "sslCertificate" {
+  type = string
+  default = "{{ secretsDir }}/ssl.crt"
+}
+
+variable "sslCertificateKey" {
+  type = string
+  default = "{{ secretsDir }}/ssl.key"
+}

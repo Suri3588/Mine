@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-config
+  namespace: nucleus
+data:
+  NODE_ENV: production
+  ROOT_URL: 'https://nk8s190725a.nucleushealthdev.io'
+  MONITOR_HOST: monitor
+  MONITOR_PROTOCOL: http
+  PHANTOMJS_PATH: /usr/local/bin/phantomjs

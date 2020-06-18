@@ -1,0 +1,135 @@
+/* 
+  This pipeline job is used to create build agents used by jenkins.
+  This is a manually run job and it allows you to select the branch
+  where the agent docker is located. Therefore, you can update the builder
+  image even if it is in a test branch.
+
+  Jenkins Setup:
+    - Default Pipeline Job
+*/
+pipeline {
+  agent {
+    label 'pop'
+  }
+  options {
+    skipDefaultCheckout true
+    timestamps()
+  }
+  parameters {
+    string description: '''Node Label that correspnds to a new agent.<br/>
+                           Use this to test a new agent. When it works out, add that to the list of agents below.''', 
+           name: 'AGENT_LABEL', trim: true
+    string description: '''To build a new image, specify the folder where the Dockerfile is - maps to projects/jenkins/agents<b>name</b><br/>
+                           <b>Note</b>The agents are always tested by doing a quick build step - even if you leave this blank.''', 
+           name: 'DOCKER_FOLDER', trim: true
+    string description: 'Branch to pull the Dockerfile file from if specified above or any built in is selected for building',
+           name: 'AGENT_BRANCH', trim: true
+    
+    booleanParam defaultValue: false, description: 'Build all the agents below', name: 'ALL'
+    booleanParam defaultValue: false, description: '<b>kubedeploy</b> <i>jenkins-kube-agent</i> Agent setup with yaml2json and kubectl', name: 'KUBE'
+    booleanParam defaultValue: false, description: '<b>meteor18</b> <i>jenkins-meteor-agent</i> Agent with Meteor installed', name: 'METEOR'
+    booleanParam defaultValue: false, description: '<b>linux</b> <i>jenkins-node-agent</i> Agent with just node installed', name: 'NODE'
+    booleanParam defaultValue: false, description: '<b>meteor18prep</b> <i>jenkins-prep-agent</i> Agent with meteor and mongo so it can do the fast prep checks.', name: 'PREP'
+    booleanParam defaultValue: false, description: '<b>meteor18test</b> <i>jenkins-test-agent</i> Agent with meteor and a lot of memory so it can run tests.', name: 'TEST'
+  }
+  stages {
+    stage('Determine Agents') {
+      steps {
+        script {
+          currentBuild.description = ''
+          // this is what we test
+          testnodes = ['kubedeploy', 'meteor18', 'linux', 'meteor18prep', 'meteor18test']
+          if (params.AGENT_LABEL && params.AGENT_LABEL != '') {
+            testnodes.add(params.AGENT_LABEL)
+          }
+
+          // this is what we build
+          dockers = []
+
+          if (params.ALL || params.KUBE) dockers.add('jenkins-kube-agent')
+          if (params.ALL || params.METEOR) dockers.add('jenkins-meteor-agent')
+          if (params.ALL || params.NODE) dockers.add('jenkins-node-agent')
+          if (params.ALL || params.PREP) dockers.add('jenkins-prep-agent')
+          if (params.ALL || params.TEST) dockers.add('jenkins-test-agent')
+
+          if (params.DOCKER_FOLDER && params.DOCKER_FOLDER != '') {
+            dockers.add(params.DOCKER_FOLDER)
+          }
+
+          if (dockers.size() > 0 && (!params.AGENT_BRANCH || params.AGENT_BRANCH == '')) {
+              error 'No agent branch selected!'
+            }
+        }
+      }
+    }
+    stage('Build Agents') {
+      when { 
+        expression {
+          return dockers.size() > 0
+        }
+      }
+      steps {
+        git branch: params.AGENT_BRANCH, changelog: false, credentialsId: 'Github', poll: false, url: 'https://github.com/radconnectIT/KNucleus-cs.git'
+        
+        dir('projects/jenkins/agents') {
+          script {
+            def commitHash = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+            def commitShortHash = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+
+            for (docker_name in dockers) {
+              echo "Building ${docker_name}"
+              def imageName = "jenkinsdevregistry.azurecr.io/jenkins/${docker_name.toLowerCase()}:${commitShortHash}"
+
+              currentBuild.description += "Build <b>${imageName}</b><br/>"
+
+              if (!fileExists(file: docker_name)) {
+                error "Could not find agent directory for: ${docker_name}!"
+              }
+
+              acrQuickTask azureCredentialsId: 'JenkinsServicePrincipal',
+                            resourceGroupName: 'EngBuildInfrastructure',
+                            registryName: 'jenkinsDevRegistry',
+                            os: 'Linux',
+                            dockerfile: 'Dockerfile',
+                            buildArgs: [[key: 'AGENT_HASH_VAR', secrecy: false, value: commitHash]],
+                            imageNames: [[image: imageName]],
+                            local: docker_name,
+                            timeout: 600
+            }
+            input "Edit the Jenkins config so the images match the hash: ${commitShortHash}"
+          }
+        }
+      }
+    }
+    stage("Test Nodes") {
+      agent none
+      steps {
+        script {
+          def tests = [:]
+          for (f in testnodes) {
+            def name = f
+            tests[name] = {
+              node(name) {
+                stage(name) {
+                  try {
+                    sh '''echo "Current Agent Hash: $AGENT_HASH"
+  if [ -z "$AGENT_HASH" ]; then
+    echo "Need to set AGENT_HASH"
+    exit 1
+  fi'''
+                  } catch (err) {
+                    script {
+                      currentBuild.description = "Agent <b>${name}</b> needs to have <code>AGENT_HASH</code> environment variable injected<br/>"
+                    }
+                    error err
+                  }
+                }
+              }
+            }
+          }
+          parallel tests
+        }
+      }
+    }
+  }
+}

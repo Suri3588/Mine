@@ -1,0 +1,76 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: curator-config
+  namespace: logging
+  labels:
+    app: curator
+data:
+  actions.yml: |
+    ---
+    actions:
+      1:
+        action: delete_indices
+        description: "Delete indices older than 3 days"
+        options:
+          timeout_override:
+          continue_if_exception: False
+          disable_action: False
+          ignore_empty_list: True
+        filters:
+         - filtertype: age
+           source: creation_date
+           direction: older
+           unit: days
+           unit_count: 3
+         - filtertype: pattern
+           kind: regex
+           value: '^(filebeat|packetbeat|metricbeat|heartbeat|winlogbeat|logstash)-.*$'
+
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  creationTimestamp: null
+  namespace: logging
+  name: curator-clean
+  selfLink: /apis/batch/v1beta1/namespaces/logging/cronjobs/curator-clean
+spec:
+# Cronjob schedule every day at 5am
+  schedule: "4 6 * * *"
+  concurrencyPolicy: Allow
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            agentpool: monpool
+          containers:
+          - image: bobrik/curator:5.8.1
+            imagePullPolicy: IfNotPresent
+            name: curator
+            args:
+            - --config
+            - /etc/curator/curator.yml
+            - /etc/curator/actions.yml
+            volumeMounts:
+            - name: actions-config
+              mountPath: /etc/curator/actions.yml
+              subPath: actions.yml
+              readOnly: true
+            - name: curator-config
+              mountPath: /etc/curator/curator.yml
+              subPath: curator.yml
+              readOnly: true
+          volumes:
+          - name: actions-config
+            configMap:
+              name: curator-config
+          - name: curator-config
+            secret:
+              secretName: curator-config
+          restartPolicy: OnFailure
+      backoffLimit: 2

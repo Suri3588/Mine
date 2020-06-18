@@ -1,0 +1,3 @@
+variable "nucleusRegistryReaderId" {
+  type = string
+}

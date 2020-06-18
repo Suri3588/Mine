@@ -1,0 +1,167 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: fluentd-es
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: fluentd-es
+    app.kubernetes.io/part-of: logging
+  annotations:
+    kubernetes.io/ingress.class: nginx-internal
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  tls:
+    - hosts:
+      - fluentd-shared-services-qe.nucleushealthdev.io
+      secretName: tls-certificate
+  rules:
+    - host: fluentd-shared-services-qe.nucleushealthdev.io
+      http:
+        paths:
+          - path: /
+            backend:
+              serviceName: fluentd-es
+              servicePort: 24224
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluentd-es
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: fluentd-es
+    app.kubernetes.io/part-of: logging
+spec:
+  ports:
+  - port: 24224
+    protocol: TCP
+    targetPort: in
+  selector:
+    app.kubernetes.io/name: fluentd-es
+    app.kubernetes.io/part-of: logging
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-es-config
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: fluentd-es
+    app.kubernetes.io/part-of: logging
+data:
+  fluentd.conf: |-
+    <source>
+      @type forward
+      port 24224
+    </source>
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fluentd-es
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: fluentd-es
+    app.kubernetes.io/part-of: logging
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fluentd-es
+      app.kubernetes.io/part-of: logging
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fluentd-es
+        app.kubernetes.io/part-of: logging
+    spec:
+      serviceAccountName: fluentd-es
+      nodeSelector:
+        agentpool: monpool
+      containers:
+      - name: fluentd-es
+        image: k8s.gcr.io/fluentd-elasticsearch:v2.4.0
+        ports:
+        - containerPort: 24224
+          name: in
+          protocol: TCP
+        env:
+        - name: FLUENTD_ARGS
+          value: --no-supervisor -q
+        volumeMounts:
+        - name: fluentd-config-volume
+          mountPath: /etc/fluent/config.d/fluentd.conf
+          subPath: fluentd.conf
+          readOnly: true
+        - name: output-config-volume
+          mountPath: /etc/fluent/config.d/output.conf
+          subPath: output.conf
+          readOnly: true
+# TODO: wire in an azure file storage account for linkerd long term storage
+#   https://github.com/kubernetes/examples/blob/master/staging/volumes/azure_file/README.md
+#        - name: azure
+#          mountPath: /var/log/fluent/logterm
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: fluentd-config-volume
+        configMap:
+          name: fluentd-es-config
+          items:
+            - key: fluentd.conf
+              path: fluentd.conf
+      - name: output-config-volume
+        secret:
+          secretName: fluent-output-config
+# TODO: wire in an azure file storage account for linkerd long term storage
+#   example secrets file located in /KNucleus-cs/tools/templates/azure-files-fluentd-secret.yaml.j2
+#      - name: azure
+#        azureFile:
+#          shareName: fluentd
+#          secretName: azure-files-fluentd-secret
+#          readOnly: false
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluentd-es
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: fluentd-es
+    app.kubernetes.io/part-of: logging
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: fluentd-es
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "namespaces"
+      - "pods"
+    verbs:
+      - "list"
+      - "get"
+      - "watch"
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: fluentd-es
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fluentd-es
+subjects:
+  - kind: ServiceAccount
+    name: fluentd-es
+    namespace: logging

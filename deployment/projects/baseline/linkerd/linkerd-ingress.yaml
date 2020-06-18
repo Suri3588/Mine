@@ -1,0 +1,49 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: linkerd
+  namespace: linkerd
+  labels:
+    app.kubernetes.io/name: linkerd
+    app.kubernetes.io/part-of: linkerd
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/auth-url: "https://linkerd-shared-services-qe.nucleushealthdev.io/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://linkerd-shared-services-qe.nucleushealthdev.io/oauth2/start?rd=$escaped_request_uri"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Origin "";
+spec:
+  tls:
+    - hosts:
+      - linkerd-shared-services-qe.nucleushealthdev.io
+      secretName: tls-certificate
+  rules:
+    - host: linkerd-shared-services-qe.nucleushealthdev.io
+      http:
+        paths:
+          - path: /
+            backend:
+              serviceName: linkerd-web
+              servicePort: 8084
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: linkerd-oauth2-proxy
+  namespace: ingress-nginx
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - host: linkerd-shared-services-qe.nucleushealthdev.io
+      http:
+        paths:
+          - path: /oauth2
+            backend:
+              serviceName: oauth2-proxy
+              servicePort: 80
+  tls:
+  - hosts:
+    - linkerd-shared-services-qe.nucleushealthdev.io
+    secretName: tls-certificate

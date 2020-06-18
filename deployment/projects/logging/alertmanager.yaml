@@ -1,0 +1,138 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: alertmanager-prometheus
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: logging
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/auth-url: "https://alertmanager-shared-services-qe.nucleushealthdev.io/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://alertmanager-shared-services-qe.nucleushealthdev.io/oauth2/start?rd=$escaped_request_uri"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Origin "";
+spec:
+
+  tls:
+    - hosts:
+      - alertmanager-shared-services-qe.nucleushealthdev.io
+      secretName: tls-certificate
+  rules:
+  - host: alertmanager-shared-services-qe.nucleushealthdev.io
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: alertmanager-prometheus
+          servicePort: 9093
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: alertmanager-oauth2-proxy
+  namespace: ingress-nginx
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - host: alertmanager-shared-services-qe.nucleushealthdev.io
+      http:
+        paths:
+          - path: /oauth2
+            backend:
+              serviceName: oauth2-proxy
+              servicePort: 80
+  tls:
+  - hosts:
+    - alertmanager-shared-services-qe.nucleushealthdev.io
+    secretName: tls-certificate
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-prometheus
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: logging
+spec:
+  ports:
+  - port: 9093
+    protocol: TCP
+    targetPort: 9093
+  selector:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: logging
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager-prometheus
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+      app.kubernetes.io/part-of: logging
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alertmanager
+        app.kubernetes.io/part-of: logging
+    spec:
+      serviceAccountName: alertmanager
+      initContainers:
+      - name: init
+        image: busybox:1.28
+        command: ['sh', '-c', 'ls -lR /etc/alertmanager']
+        volumeMounts:
+        - name: alertmanager-config
+          mountPath: /etc/alertmanager/config.yml
+          subPath: config.yml
+          readOnly: true
+      containers:
+      - name: alertmanager-prometheus
+        image: prom/alertmanager:v0.20.0
+        args:
+          - "--config.file=/etc/alertmanager/config.yml"
+          - "--storage.path=/alertmanager"
+          - "--web.external-url=https://alertmanager-shared-services-qe.nucleushealthdev.io/"
+        ports:
+        - name: alertmanager
+          containerPort: 9093
+        volumeMounts:
+        - name: alertmanager-data
+          mountPath: /alertmanager
+        - name: alertmanager-config
+          mountPath: /etc/alertmanager/config.yml
+          subPath: config.yml
+          readOnly: true
+      volumes:
+      - name: tmp-config
+        emptyDir: {}
+      - name: alertmanager-data
+        emptyDir: {}
+      - name: alertmanager-config
+        secret:
+          secretName: alertmanager-config
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alertmanager
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: logging

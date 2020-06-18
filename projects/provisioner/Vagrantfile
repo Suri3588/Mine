@@ -1,0 +1,88 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Get the timezone to set ntp_timezone - this works only if geerlingguy.ntp is installed
+if File.exists?('/etc/localtime')
+  path = File.readlink('/etc/localtime')
+  items = path.split("zoneinfo/")
+  if items.length == 2
+    time_zone = items[1]
+  end
+end
+
+ansible_vars = {
+  ntp_timezone: time_zone
+}
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+Vagrant.configure("2") do |config|
+  # The most common configuration options are documented and commented below.
+  # For a complete reference, please see the online documentation at
+  # https://docs.vagrantup.com.
+
+  # Every Vagrant development environment requires a box. You can search for
+  # boxes at https://atlas.hashicorp.com/search.
+  config.vm.box = "ubuntu/xenial64"
+  config.vm.hostname = "provisioner"
+
+  # Provider-specific configuration so you can fine-tune various
+  # backing providers for Vagrant. These expose provider-specific options.
+  # Example for VirtualBox:
+  #
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = "2048"
+  end
+
+  # Disable automatic box update checking. If you disable this, then
+  # boxes will only be checked for updates when the user runs
+  # `vagrant box outdated`. This is not recommended.
+  # config.vm.box_check_update = false
+
+  # Create a forwarded port mapping which allows access to a specific port
+  # within the machine from a port on the host machine. In the example below,
+  # accessing "localhost:8080" will access port 80 on the guest machine.
+  # config.vm.network "forwarded_port", guest: 8080, host: 80
+
+  # Create a private network, which allows host-only access to the machine
+  # using a specific IP.
+  config.vm.network "private_network", ip: "192.168.33.10"
+
+  # Create a public network, which generally matched to bridged network.
+  # Bridged networks make the machine appear as another physical device on
+  # your network.
+  # config.vm.network "public_network"
+
+  # Share an additional folder to the guest VM. The first argument is
+  # the path on the host to the actual folder. The second argument is
+  # the path on the guest to mount the folder. And the optional third
+  # argument is a set of non-required options.
+  config.vm.synced_folder "../../../KNucleus-cs", "/KNucleus-cs"
+  config.vm.synced_folder "../../../KNucleus-cs/deployment", "/Deployment"
+  config.vm.synced_folder "./scripts", "/home/vagrant/scripts"
+
+  if File.directory?("#{Dir.home}/share")
+    config.vm.synced_folder "#{Dir.home}/share", "/home/vagrant/share"
+  end
+
+  localAnsibleFiles = ['ansible.cfg', 'playbook.yml', 'vars.yml', 'requirements.yml']
+  localAnsibleFiles.each do |ansibleFile|
+    if File.file?(ansibleFile)
+      config.vm.provision "file", source: ansibleFile, destination: "/home/vagrant/#{File.basename(ansibleFile)}"
+    end
+  end
+
+  config.vm.provision :ansible_local do |ansible|
+    ansible.provisioning_path = "/home/vagrant"
+    ansible.playbook = "playbook.yml"
+    ansible.extra_vars = ansible_vars
+    ansible.galaxy_role_file = "requirements.yml"
+    ansible.install_mode = "pip"
+    ansible.version = "2.5.5"
+    if !File.file?("#{Dir.home}/.vagrant_version_2.5.5")
+      ansible.pip_install_cmd = "curl https://bootstrap.pypa.io/get-pip.py | sudo python"
+    end
+  end
+end

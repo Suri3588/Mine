@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-script
+  namespace: nucleus
+  labels:
+    app.kubernetes.io/name: seed-script
+    app.kubernetes.io/part-of: nucleus
+spec:
+  template:
+    metadata:
+      annotations:
+        fluentbit.io/parser: nucleus
+      creationTimestamp: null
+      labels:
+        app: meteor-ui-ddp
+        deployment: {{ resourceGroup }}
+    spec:
+      containers:
+      - name: seed-script
+        image: {{ dockerRegistry }}{{ seedImage }}
+        command: ["/bin/bash", "-c", "cd /seedData&&node k8s-executor.js"]
+        env:
+        - name: MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              key: MONGO_URL
+              name: mongo-secrets
+        - name: NUCLEUS_INGESTION_MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: NUCLEUS_INGESTION_MONGO_URL
+      hostAliases:
+      {% for mongo in mongos %}
+      - ip: "{{ mongo.ipAddress }}"
+        hostnames:
+        - "{{ mongo.name }}"
+      {% endfor %}
+      restartPolicy: Never
+      imagePullSecrets:
+      - name: regcred
+      nodeSelector:
+        agentpool: dataprocpool
+  backoffLimit: 4

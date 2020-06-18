@@ -1,0 +1,3 @@
+beats_client,BEATS_PASSWORD,Beats Client,beats_writer
+gavin,KIBANA_ADMIN_PASSWORD,Gavin Belson,superuser
+itsupport,ELASTICSEARCH_READ_ONLY_PASSWORD,IT Support,read_only

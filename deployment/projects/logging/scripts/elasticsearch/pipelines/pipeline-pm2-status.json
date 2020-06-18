@@ -1,0 +1,143 @@
+{
+  "description" : "Pipeline for parsing PM2 status messages.",
+  "on_failure" : [
+    {
+      "set" : {
+        "field" : "error.message",
+        "value" : "{{ _ingest.on_failure_message }}"
+      }
+    }
+  ],
+  "processors" : [
+    {
+      "grok" : {
+        "field" : "message",
+        "ignore_missing" : true,
+        "patterns" : [
+          "%{TIMESTAMP_ISO8601:pm2.status.timestamp} app: %{DATA:pm2.status.app}, id: %{DATA:pm2.status.id}, line: %{DATA:pm2.status.line_num}/%{DATA:pm2.status.service_count}, mode: %{DATA:pm2.status.mode}, pid: %{DATA:pm2.status.pid}, status: %{DATA:pm2.status.status}, restart: %{DATA:pm2.status.restart}, recentRestarts: %{DATA:pm2.status.recent_restarts}, uptime: %{DATA:pm2.status.uptime}, uptimeSeconds: %{DATA:pm2.status.upseconds}, cpu: %{DATA:pm2.status.cpu}, mem: %{DATA:pm2.status.mem}, mb: %{DATA:pm2.status.mb}, watching: %{GREEDYDATA:pm2.status.watching}",
+          "%{TIMESTAMP_ISO8601:pm2.status.timestamp} app: %{DATA:pm2.status.app}, id: %{DATA:pm2.status.id}/%{DATA:pm2.status.max_id}, mode: %{DATA:pm2.status.mode}, pid: %{DATA:pm2.status.pid}, status: %{DATA:pm2.status.status}, restart: %{DATA:pm2.status.restart}, uptime: %{DATA:pm2.status.uptime}, uptimeSeconds: %{DATA:pm2.status.upseconds}, cpu: %{DATA:pm2.status.cpu}, mem: %{DATA:pm2.status.mem}, mb: %{DATA:pm2.status.mb}, watching: %{GREEDYDATA:pm2.status.watching}",
+          "%{TIMESTAMP_ISO8601:pm2.status.timestamp} app: %{DATA:pm2.status.app}, id: %{DATA:pm2.status.id}, mode: %{DATA:pm2.status.mode}, pid: %{DATA:pm2.status.pid}, status: %{DATA:pm2.status.status}, restart: %{DATA:pm2.status.restart}, uptime: %{DATA:pm2.status.uptime}, uptimeSeconds: %{DATA:pm2.status.upseconds}, cpu: %{DATA:pm2.status.cpu}, mem: %{DATA:pm2.status.mem}, mb: %{DATA:pm2.status.mb}, watching: %{GREEDYDATA:pm2.status.watching}"
+        ]
+      }
+    },
+    {
+      "remove" : {
+        "field" : "message"
+      }
+    },
+    {
+      "date" : {
+        "field" : "pm2.status.timestamp",
+        "formats" : [
+          "ISO8601"
+        ],
+        "ignore_failure" : true,
+        "target_field" : "@timestamp"
+      }
+    },
+    {
+      "remove" : {
+        "field" : "pm2.status.timestamp"
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.id",
+        "type": "integer"
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.max_id",
+        "type": "integer",
+        "ignore_missing": true
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.line_num",
+        "type": "integer",
+        "on_failure" : [
+          {
+            "set" : {
+              "field" : "pm2.status.line_num",
+              "value" : "{{pm2.status.id}}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.service_count",
+        "type": "integer",
+        "on_failure" : [
+          {
+            "set" : {
+              "field" : "pm2.status.service_count",
+              "value" : "{{pm2.status.max_id}}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.pid",
+        "type": "integer"
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.restart",
+        "type": "integer"
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.recent_restarts",
+        "type": "integer",
+        "on_failure" : [
+          {
+            "set" : {
+              "field" : "pm2.status.recent_restarts",
+              "value" : "{{pm2.status.restart}}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.upseconds",
+        "type": "integer"
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.cpu",
+        "type": "string",
+        "target_field": "pm2.status.cpuint"
+      }
+    },
+    {
+      "gsub": {
+        "field": "pm2.status.cpuint",
+        "pattern": ".$",
+        "replacement": ""
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.cpuint",
+        "type": "integer"
+      }
+    },
+    {
+      "convert": {
+        "field" : "pm2.status.mb",
+        "type": "float"
+      }
+    }
+  ]
+}

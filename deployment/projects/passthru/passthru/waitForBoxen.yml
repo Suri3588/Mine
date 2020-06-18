@@ -1,0 +1,17 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+
+  tasks:
+  - name: Waiting on Jump Box
+    local_action: wait_for host=104.42.62.182 state=started port=22 delay=30 timeout=300 connect_timeout=15
+
+  - name: Waiting on pass-thru
+    wait_for:
+      host: "10.1.6.5"
+      state: started
+      port: 22
+      delay: 30
+      timeout: 300
+      connect_timeout: 15
+    delegate_to: "104.42.62.182"

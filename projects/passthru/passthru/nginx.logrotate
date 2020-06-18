@@ -1,0 +1,15 @@
+/nucleus/log/nginx/*.log {
+    create 0644 www-data root
+    daily
+    rotate 10
+    missingok
+    notifempty
+    compress
+    sharedscripts
+    su www-data root
+    postrotate
+            /bin/kill -USR1 `cat /run/nginx.pid 2>/dev/null` 2>/dev/null || true
+    endscript
+}
+
+

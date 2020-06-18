@@ -1,0 +1,21 @@
+127.0.0.1 localhost
+
+# The following lines are desirable for IPv6 capable hosts
+::1 ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+ff02::3 ip6-allhosts
+
+{% if isSharedService == 'false' %}
+{{ BOX_IP }} passthru
+{{ ingressIp }} prometheus-scraper
+{{ mongo1Ip }} mongo1
+{{ mongo2Ip }} mongo2
+{{ mongo3Ip }} mongo3
+{% endif %}
+10.2.111.105 Dev
+10.2.103.105 QE
+10.2.95.105 staging2
+10.22.215.105 jms-test

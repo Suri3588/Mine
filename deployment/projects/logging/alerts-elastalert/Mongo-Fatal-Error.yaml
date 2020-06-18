@@ -1,0 +1,17 @@
+---
+name: MongoDB Fatal Error - Alert
+type: frequency
+index: logstash-*
+num_events: 1
+timeframe:
+  minutes: 5
+realert:
+  hours: 6
+query_key: studyId
+filter:
+- query:
+    query_string:
+      query: "hostname: mongo* AND ( severity: W OR  severity: E )"
+alert_subject: "MongoDB Fatal Erro in {0} Environment"
+alert_subject_args:
+- kubernetes.labels.deployment

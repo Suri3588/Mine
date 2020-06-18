@@ -1,0 +1,36 @@
+resolver 127.0.0.1 ipv6=off;
+
+server {
+  listen 80 default_server;
+  listen [::]:80 ipv6only=on;
+  server_name {{ proxyServerName }};
+
+{% if isSharedService == 'true' %}
+  location ~* ^/(.*)/(.*)/([0-9]*)/(.*) {
+    proxy_pass        http://$1/$2/$3/$4$is_args$args;
+    proxy_set_header  Host $1;
+  }
+
+  location ~* ^/(.*)/(.*)/(.*) {
+    proxy_pass        http://$1/$2/$3$is_args$args;
+    proxy_set_header  Host $1;
+  }
+{% else %}
+  location ~* ^/prometheus-scraper/(.*) {
+    proxy_pass        http://prometheus-scraper/$1$is_args$args;
+    proxy_set_header  Host prometheus-scraper;
+  }
+
+  location ~* ^/(.*)/([0-9]*)/(.*) {
+    proxy_pass        http://$1:$2/$3$is_args$args;
+    proxy_set_header  Host $1;
+  }
+{% endif %}
+
+  error_page 503 @maintenance;
+  location @maintenance {
+     if (-f $document_root/maintenance.html) {
+       rewrite ^(.*)$ /maintenance.html break;
+     }
+  }
+}

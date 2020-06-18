@@ -1,0 +1,588 @@
+def QA_PR
+def withGitCreds 
+def acceptanceTestState = "none"
+def integrationTestState = "none"
+pipeline {
+  agent { label 'kubedeploy' } 
+  options {
+    parallelsAlwaysFailFast() 
+    timestamps()
+    disableConcurrentBuilds()
+  }
+  environment {
+    GH_TOKEN=credentials("GH_TOKEN")
+    ENV_NAME="{{ resourceGroup }}"
+    ENV_URL="http://{{ dnsPrefix }}.{{ deployDomain }}"// Used to run the functional tests
+    DOCKER_REGISTRY  = "{{ dockerRegistry }}"
+    QA_BRANCH = "" // Does not exist yet
+    BRANCH = "{{ branchName }}"
+    ENV_ES_STORAGE_CREDENTIALS = '{{ resourceGroup }}-ES-Storage'
+    ENV_PUBLIC_STORAGE_CREDENTIALS = '{{ resourceGroup }}-Public-Storage'
+    GLOBAL_STORAGE_CREDENTIALS = '{{ jenkinsBuildType }}builds'
+    BUILD_TYPE='{{ jenkinsBuildType }}'
+  }
+  parameters {
+    string description: 'Docker image tag', name: 'image', defaultValue: '', trim: true
+    string description: 'Edge Server hash', name: 'esHash', defaultValue: '', trim: true
+    string description: 'Branch name(this is temporary)', name: 'branch', defaultValue: '{{ branchName }}', trim: true
+    booleanParam description: 'Upload ES/Electron apps only', defaultValue: false, name: 'UPLOAD_ES_ONLY'
+  }
+  stages {
+    stage('Pre-build') {
+      steps {
+        script {
+          withCredentials([
+          azureServicePrincipal(credentialsId:'{{ jenkinsServicePrincipal }}',
+          clientSecretVariable: 'ARM_CLIENT_SECRET', 
+          clientIdVariable: 'ARM_CLIENT_ID', 
+          tenantIdVariable: 'ARM_TENANT_ID'
+          )]) {
+            sh "az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID"
+            dir("deployment") {
+              sh '''#!/bin/bash
+                source extract-secrets.sh --silent
+                KUBECONFIG=$deploymentDir/$secretsDir/k8s-conf 
+                export KUBECONFIG
+                kubectl config use-context "api-deployment-account-default-$resourceGroup-aks"
+              '''
+            }
+          }
+          currentBuild.displayName = "$ENV_NAME"
+          currentBuild.description = "${params.image}"
+          withGitCreds = load "${env.WORKSPACE}/tools/withGitCreds.groovy"
+          gitCredId = withGitCreds.setId('Github')
+        }
+      }
+    }
+
+    stage('Checking/Pull env branch') {
+      steps {
+        script {
+          withGitCreds = load "${env.WORKSPACE}/tools/withGitCreds.groovy"
+          gitCredId = withGitCreds.setId('Github')
+          sh "git branch $BRANCH||true"
+          sh "git checkout $BRANCH|| true"
+          //withGitCreds.run("Git pull", "git pull origin $BRANCH")
+        }
+      }
+    }
+
+    stage('Prepare release-branch') {
+      when {
+        // Only run if we need to update the images
+        expression { params.image != '' }
+      }
+      parallel {
+        stage('Prepare radconnect release') {
+          when {
+            // Only run if we need to update the images
+            expression { params.image != '' }
+          }
+          steps {
+            script {
+              update_radconnect_images()
+            }
+          }
+        }
+        stage('Prepare imageviewerservice release') {
+          when {
+            // Only run if we need to update the images
+            expression { params.image != '' }
+          }
+          steps {
+            script {
+              update_imageviwer_images()
+            }
+          }
+        }
+        stage('Prepare seed release') {
+          when {
+            // Only run if we need to update the images
+            expression { params.image != '' }
+          }
+          steps {
+            script {
+              update_seed_images()
+            }
+          }
+        }
+        stage('Prepare backupservice release') {
+          when {
+            // Only run if we need to update the images
+            expression { params.image != '' }
+          }
+          steps {
+            script {
+              update_backupservice_images()
+            }
+          }
+        }
+      }
+    }
+
+    stage('Prepare ES version release') {
+      when {
+        // Only run if we need to update the images
+        expression { params.esHash != '' }
+      }
+      environment {
+        VERSION = "${params.esHash}"
+      }
+      steps {
+        script {
+          dir('deployment') {
+            sh '''#!/bin/bash
+              VERSION=`echo $VERSION | awk '{print substr($1,1,10)}'`
+              currentHash=`grep -Po 'edgeServerHash.* \\K[a-f0-9]{10,40}' secret-vars.txt`
+              sed -i "s/$currentHash/$VERSION/g" secret-vars.txt
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Git push to no PR') {
+      when {
+        // Only run if we need to update the images
+        expression { params.image != '' || params.esHash }
+      }
+      steps {
+        script {
+          gitCredId = withGitCreds.setId('Github')
+          gitConfig()
+          sh "git add . || true"
+          sh "git commit -m 'Ci: add update service images --no-build' || true"
+          withGitCreds.run("Git pull", "git pull origin $BRANCH")
+          withGitCreds.run("Git push", "git push origin $BRANCH -f")
+        }
+      }
+    }
+
+    stage('Execute DB Migration') {
+      when {
+        expression {
+          return !params.UPLOAD_ES_ONLY
+        }
+      }
+      steps {
+        script {
+          try {
+            run_kb8s_cmd("delete job seed-script -n nucleus")
+          } catch (Exception e){
+            sh "echo 'job seed-script does not exists'"
+          }
+
+          run_kb8s_cmd("apply -f deployment/projects/nucleus/seedJob/seedJob.yaml -n nucleus")
+          sleep 120
+          run_kb8s_cmd("logs -f job/seed-script -n nucleus")
+        }
+      }
+    }
+
+    stage('Deploying to Kb8s') {
+      when {
+        expression {
+          return !params.UPLOAD_ES_ONLY
+        }
+      }
+      parallel {
+        stage('Deploy') {
+          steps {
+            script {
+              dir("deployment") {
+                withCredentials([
+                azureServicePrincipal(credentialsId:'{{ jenkinsServicePrincipal }}',
+                clientSecretVariable: 'ARM_CLIENT_SECRET', 
+                clientIdVariable: 'ARM_CLIENT_ID', 
+                tenantIdVariable: 'ARM_TENANT_ID'
+                )]) {
+                  sh """#!/bin/bash
+                    az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+                    source extract-secrets.sh --silent
+                    ./update-deployment.sh
+                  """
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Print enviroment diagram') {
+      steps {
+        script {
+            dir("deployment") {
+              sh '''#!/bin/bash
+                source extract-secrets.sh --silent
+                KUBECONFIG=$deploymentDir/$secretsDir/k8s-conf 
+                export KUBECONFIG
+                kubectl config use-context "api-deployment-account-default-$resourceGroup-aks"
+                cd ../tools
+                node diagram.js \$resourceGroup true>diagram.txt
+              '''
+              sh 'cat ../tools/diagram.txt'
+            }
+            archiveArtifacts artifacts: "tools/diagram.txt"
+            sh "rm tools/diagram.txt"
+        }
+      }
+    }
+
+    stage('Upload Edge Server and Electron apps') {
+      environment {
+        VERSION = "${params.esHash}"
+        EdgeServerBuilderPrivateKeyPasswordEnc64 = "${BUILD_TYPE}EdgeServerBuilderPrivateKeyPasswordEnc64"
+        EdgeServerPrivateGpgKey = "${BUILD_TYPE}EdgeServerPrivateGpgKey"
+      }
+      steps {
+        script {
+          dir("deployment") {
+            // switch dev or prod
+            def builderPrivateKeyPasswordEnc64 = "${BUILD_TYPE}EdgeServerBuilderPrivateKeyPasswordEnc64"
+            def privateGpgKey = "${BUILD_TYPE}EdgeServerPrivateGpgKey"
+
+            withAzureKeyvault([
+              [envVariable: 'builderPrivateKeyPasswordEnc64', name: builderPrivateKeyPasswordEnc64, secretType: 'Secret'],
+              [envVariable: 'privateGpgKey', name: privateGpgKey, secretType: 'Secret'],
+            ]) {
+              withCredentials([azureServicePrincipal(
+                      credentialsId: '{{ jenkinsServicePrincipal }}', 
+                      clientSecretVariable: 'SECRET',
+                      clientIdVariable: 'CLIENT',
+                      tenantIdVariable: 'TENANT'),
+                    azureServicePrincipal(
+                      credentialsId: '{{ jenkinsGlobalServicePrincipal }}',
+                      clientSecretVariable: 'GLOBAL_SECRET',
+                      clientIdVariable: 'GLOBAL_CLIENT',
+                      tenantIdVariable: 'GLOBAL_TENANT'),
+
+                    azureStorage(
+                      credentialsId: "${GLOBAL_STORAGE_CREDENTIALS}",
+                      storageAccountNameVariable: 'SRCST'),
+                    azureStorage(
+                      credentialsId: "${ENV_ES_STORAGE_CREDENTIALS}",
+                      storageAccountNameVariable: 'ESST'),
+                    azureStorage(
+                      credentialsId: "${ENV_PUBLIC_STORAGE_CREDENTIALS}",
+                      storageAccountNameVariable: 'PUBST')
+              ]) {
+                sh '''#!/bin/bash
+                  az login --service-principal -u $CLIENT -p $SECRET --tenant $TENANT
+                  source extract-secrets.sh --silent
+                  if [ -z "$VERSION" ]; then
+                    VERSION=$edgeServerHash
+                  fi 
+                  VERSION=`echo $VERSION | awk '{print substr($1,1,10)}'`
+
+                  # copy Electron apps
+                  echo "Will copy Electron apps"
+                  end=`date -u -d "1 minutes" '+%Y-%m-%dT%H:%M:%SZ'`
+                  az login --service-principal -u $GLOBAL_CLIENT -p $GLOBAL_SECRET --tenant $GLOBAL_TENANT
+                  TOKEN1=`az storage container generate-sas --account-name $SRCST --name electron --permission rl --expiry $end -o tsv`
+                  az login --service-principal -u $CLIENT -p $SECRET --tenant $TENANT
+                  TOKEN2=`az storage container generate-sas --account-name $PUBST --name public --permission acdlrw --expiry $end -o tsv`
+
+                  azcopy copy "https://$SRCST.blob.core.windows.net/electron/$VERSION/*?$TOKEN1" "https://$PUBST.blob.core.windows.net/public/?$TOKEN2" --recursive
+
+                  # download and create final ES installer packages and upload manifest.json and ES zip
+                  echo "Will download ES installer package"
+                  end=`date -u -d "5 minutes" '+%Y-%m-%dT%H:%M:%SZ'`
+                  az login --service-principal -u $GLOBAL_CLIENT -p $GLOBAL_SECRET --tenant $GLOBAL_TENANT
+                  TOKEN1=`az storage container generate-sas --account-name $SRCST --name edgeserver --permission rl --expiry $end -o tsv`
+                  azcopy copy "https://$SRCST.blob.core.windows.net/edgeserver/$VERSION/installers/EdgeServer-$VERSION.zip?$TOKEN1" ./$VERSION/EdgeServer-$VERSION.zip
+                  unzip ./$VERSION/EdgeServer-$VERSION.zip -d installers
+                  ../tools/create-es-installer.sh -p $builderPrivateKeyPasswordEnc64 -k $privateGpgKey -d ./installers -v $VERSION -m $monitorUrl -b $beatsElasticsearchToken
+
+                  pushd installers
+                  zip ../EdgeServer-$VERSION.zip -r *
+                  popd
+
+                  # deploy ES packages except installers and releases
+                  for NAME in 'binaries' 'configurations' 'dependencies' 'scripts'
+                  do
+                    end=`date -u -d "10 minutes" '+%Y-%m-%dT%H:%M:%SZ'`
+                    echo "Will login to JenkinsServicePrincipal"
+                    az login --service-principal -u $GLOBAL_CLIENT -p $GLOBAL_SECRET --tenant $GLOBAL_TENANT
+                    echo "Will get the token to te SRCST edge server"
+                    TOKEN1=`az storage container generate-sas --account-name $SRCST --name edgeserver --permission rl --expiry $end -o tsv`
+                    echo "Will login into CHCO account"
+                    az login --service-principal -u $CLIENT -p $SECRET --tenant $TENANT
+                    echo "Will get the token for ESST"
+                    TOKEN2=`az storage container generate-sas --account-name $ESST --name $NAME --permission acdlrw --expiry $end -o tsv`
+
+                    # copy blob to blob
+                    azcopy copy "https://$SRCST.blob.core.windows.net/edgeserver/$VERSION/$NAME/*?$TOKEN1" "https://$ESST.blob.core.windows.net/$NAME/?$TOKEN2"
+
+                    mkdir -p packages
+                    pushd packages
+                    echo "Processing ES files in $NAME"
+                    azcopy copy "https://$SRCST.blob.core.windows.net/edgeserver/$VERSION/$NAME/*?$TOKEN1" ./
+                    rm *.sig
+                    ../../tools/sign-files.sh -d . -p $builderPrivateKeyPasswordEnc64
+                    echo "Uploading signature files"
+                    azcopy copy "./*.sig" "https://$ESST.blob.core.windows.net/$NAME/?$TOKEN2"
+                    popd
+                    rm -rf packages
+                  done
+
+                  # deploy ES installer zip
+                  echo "Will deploy ES installer zip"
+                  end=`date -u -d "5 minutes" '+%Y-%m-%dT%H:%M:%SZ'`
+                  az login --service-principal -u $CLIENT -p $SECRET --tenant $TENANT
+                  TOKEN2=`az storage container generate-sas --account-name $ESST --name installers --permission acdlrw --expiry $end -o tsv`
+                  azcopy copy "./EdgeServer-$VERSION.zip" "https://$ESST.blob.core.windows.net/installers/?$TOKEN2"
+
+                  # deploy versionConfig and overwrite import-fingerprint.txt and import-public.key
+                  end=`date -u -d "1 minutes" '+%Y-%m-%dT%H:%M:%SZ'`
+                  TOKEN2=`az storage container generate-sas --account-name $ESST --name configurations --permission acdlrw --expiry $end -o tsv`
+                  echo "Will deploy versionConfig"
+                  azcopy copy "./installers/Versions/$VERSION/NucleusEdgeServer/configs/versionConfig-$VERSION.*" "https://$ESST.blob.core.windows.net/configurations/?$TOKEN2"
+                  echo "Will deploy import-fingerprint.txt"
+                  azcopy copy "./installers/Versions/$VERSION/configs/import-fingerprint-$VERSION.txt" "https://$ESST.blob.core.windows.net/configurations/?$TOKEN2"
+                  azcopy copy "./installers/Versions/$VERSION/configs/import-fingerprint-$VERSION.txt.sig" "https://$ESST.blob.core.windows.net/configurations/?$TOKEN2"
+
+                  echo "Will deploy import-public.key"
+                  azcopy copy "./installers/Versions/$VERSION/configs/import-public-$VERSION.key" "https://$ESST.blob.core.windows.net/configurations/?$TOKEN2"
+                  azcopy copy "./installers/Versions/$VERSION/configs/import-public-$VERSION.key.sig" "https://$ESST.blob.core.windows.net/configurations/?$TOKEN2"
+
+                  # deploy manifest.json as release info
+                  # Note: once this release info is deployed, Nucleus GUI can select this version for download/install event
+                  echo "Will deploy manifest.json"
+                  end=`date -u -d "1 minutes" '+%Y-%m-%dT%H:%M:%SZ'`
+                  TOKEN2=`az storage container generate-sas --account-name $ESST --name releases --permission acdlrw --expiry $end -o tsv`
+                  azcopy copy "./installers/Versions/$VERSION/manifest.json" "https://$ESST.blob.core.windows.net/releases/release-$VERSION.json?$TOKEN2"
+                '''
+
+                // clean-up work folder
+                dir('installers') {
+                  deleteDir()
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Smoke tests') {
+      when {
+        expression {
+          return !params.UPLOAD_ES_ONLY
+        }
+      }
+      parallel {
+        stage('Acceptance test') {
+          agent { label 'pop' } 
+          steps {
+            script {
+              build job: 'functional-test-single-run', parameters: [string(name: 'buildName', value: 'testing-deploy'), string(name: 'branch', value: 'poc-ci'), string(name: 'url', value: ENV_URL), string(name: 'script', value: 'npm run test:NIX-T448 -- --browser="chromium:headless"'), string(name: 'parameters', value: 'HASH="NO_HASH_USE_THE_DEPLOYED" RETRY=3 BASE_TIMEOUT=100'), booleanParam(name: 'onlyIntegration', value: false)], propagate: true, wait: true // T148
+              acceptanceTestState = "success"
+            }
+          }
+        }
+        stage('Integration test') {
+          agent { label 'pop' } 
+          steps {
+            script {
+              build job: 'functional-test-single-run', parameters: [string(name: 'buildName',
+              value: 'testing-deploy'), string(name: 'branch', value: 'poc-ci'), string(name:
+              'url', value: ENV_URL), string(name: 'script', 
+              value: 'npm run test:Before -- --browser="chromium:headless"'), string(name: 'parameters', value:
+              'HASH="NO_HASH_USE_THE_DEPLOYED"'), booleanParam(name: 'onlyIntegration', value:
+              true)], propagate: false, wait: true// Integration
+              integrationTestState = "success"
+            }
+          }
+        }
+        stage('Tests watch dog') {// This is a test to a Jenkins bug
+          steps {
+            script {
+              waitUntil {
+                sleep(time: 10, unit: "SECONDS")
+                def result  = acceptanceTestState == integrationTestState &&
+                integrationTestState == "success"
+                if (!result) {
+                  print "Tests not finished yet!"
+                }
+                result
+              }
+            }
+          }
+        }
+        stage('All e2e test') {
+          when {
+            // Only run if we need to update the images
+            expression { params.image != '' }
+          }
+          steps {
+            script {
+              build job: 'functional-test', parameters: [string(name: 'branch', value:
+              'poc-ci'), string(name: 'url', value: ENV_URL), string(name: 'hash',
+              value: 'NO_HASH_USE_THE_DEPLOYED'), booleanParam(name: 'runIntegrationTests', value: true),
+              booleanParam(name: 'publishJira', value: false), string(name: 'runKey', value:
+              ''), string(name: 'runName', value: 'Executed by automation'), string(name:
+              'folderName', value: 'automation')], propagate: false, wait: false
+            }
+          }
+        }
+      }
+    }
+
+    stage('Prepare QA release-branch') {
+      when {
+        // Only run if we need to update the images
+        expression { params.image != '' && false}
+      }
+      steps {
+        script {
+          todo()
+        }
+      }
+    }
+
+    stage('Git push to tmp branch') {
+      when {
+        // Only run if we need to update the images
+        expression { params.image != '' }
+      }
+      steps {
+        script {
+          gitCredId = withGitCreds.setId('Github')
+          gitConfig()
+          sh "git add . || true"
+          sh "git commit -m 'Ci: add update service images --no-build' || true"
+          withGitCreds.run("Git pull", "git pull origin ${params.branch}||true")
+          withGitCreds.run("Git push", "git push origin ${params.branch} -f")
+        }
+      }
+    }
+
+    stage('Git push and open the pull request to QA') {
+      when {
+        // Only run if we need to update the images
+        expression { params.image != '' && false }
+      }
+
+      steps {
+        script {
+          gitCredId = withGitCreds.setId('Github')
+          withGitCreds.run("Git pull", "git pull origin ${params.branch} -f||true")
+          withGitCreds.run("Git push", "git push origin ${params.branch} -f")
+          qa_pr_result = withGitCreds.run("Openinig the PR", "git pull-request --target-remote origin --target-branch $QA_BRANCH  --title 'Merge Request version ${params.image} deployed to QA enviroment' --message 'After merging this PR it will automatically deployed to QA enviroment' --no-rebase")
+          QA_PR = qa_pr_result.trim().split("\n").last().split("/").last()
+        }
+      }
+    }
+
+    stage('Wait QA PR to merge') {
+      when {
+        // Only run if we need to update the images
+        expression { params.image != '' && false}
+      }
+      steps {
+        script {
+          waitUntilPullRequestMerged(QA_PR)
+        }
+      }
+    }
+    stage('Deploy to QA') {
+      when {
+        // Only run if we need to update the images
+        expression { params.image != '' && false}
+      }
+      steps {
+        script {
+          apply_kb8s_deploy();
+        }
+      }
+    }
+  }
+}
+
+def run_kb8s_cmd(cmd) {
+  sh "kubectl --kubeconfig=./deployment/secretfiles/k8s-conf ${cmd}"
+}
+
+def update_image(folderName, fileName, image) {
+  sh "cd deployment/projects/nucleus&&./update-service-image.sh  ${folderName} ${fileName} nucleus ${image}"
+}
+
+def apply_kb8s_deploy() {
+  services = [
+    'edgeServerDdp:edge-server-ddp',
+    'imageDataService:image-data-service',
+    'meteorUiDdp:meteor-ui-ddp',
+    'imageViewerService:image-viewer-service'
+  ]
+  services.each { serviceStr ->
+    service = serviceStr.split(":")
+    run_kb8s_cmd("apply -f deployment/projects/nucleus/${service.first()}/${service.last()}.yaml")
+    run_kb8s_cmd("apply -f deployment/projects/nucleus/${service.first()}/ingress-${service.last()}.yaml")
+  }
+
+  nonIngressServices = [
+    'studyRollup:study-rollup',
+    'p10Chunk:p10-chunk',
+    'p10Accumulator:p10-accumulator',
+    'chunkFrameExtraction:chunk-frame-extraction',
+  ]
+
+  nonIngressServices.each { serviceStr ->
+    service = serviceStr.split(":")
+    run_kb8s_cmd("apply -f deployment/projects/nucleus/${service.first()}/${service.last()}.yaml")
+  }
+}
+def waitUntilPullRequestMerged(prId) {
+  sleep(time: 10, unit: "SECONDS")
+  withCredentials([usernamePassword(credentialsId: 'Github', passwordVariable: 'PASSWORD', usernameVariable: 'USERNAME')]) {
+    waitUntil {
+      merged = sh(
+        script: "curl -u $USERNAME:$PASSWORD https://api.github.com/repos/radconnectIT/KNucleus-cs/pulls/${prId} | jq \".merged\" ",
+        returnStdout: true
+      ).trim()
+      merged == "true"
+    }
+  }
+}
+def update_imageviwer_images() {
+  update_image("imageViewerService", "image-viewer-service",
+  "{{ dockerRegistry }}/{{ jenkinsBuildType }}/imageviewerservice:${params.image}")
+}
+def update_radconnect_images() {
+  services = [
+  'imageDataService:image-data-service',
+  'chunkFrameExtraction:chunk-frame-extraction',
+  'edgeServerDdp:edge-server-ddp',
+  'meteorUiDdp:meteor-ui-ddp',
+  'p10Accumulator:p10-accumulator',
+  'p10Chunk:p10-chunk',
+  'studyRollup:study-rollup',
+  'backgroundProcessor:background-processor'
+  ]
+  services.each{ serviceStr -> 
+    service = serviceStr.split(":")
+    update_image(service.first(), service.last(),
+    "{{ dockerRegistry }}/{{ jenkinsBuildType }}/radconnect:${params.image}")
+  }
+}
+def update_backupservice_images() {
+  update_image("backupService", "backup-service",
+  "{{ dockerRegistry }}/{{ jenkinsBuildType }}/backupservice:${params.image}")
+}
+
+def update_seed_images() {
+  update_image("seedJob", "seedJob",
+  "{{ dockerRegistry }}/{{ jenkinsBuildType }}/mongoseedjob:${params.image}")
+}
+
+def todo() {
+  sh "echo 'Todo...'"
+}
+
+def gitConfig() {
+  sh'''
+    git config --global user.email "jenkins@nucleushealth.io"
+    git config --global user.name "Jenkins User"
+  '''
+}

@@ -1,0 +1,28 @@
+- name: Install NVM {{ NVM_VERSION }}
+  become: true
+  become_user: "{{ pm2_user }}"
+  shell: curl -o- https://raw.githubusercontent.com/creationix/nvm/v{{ NVM_VERSION }}/install.sh | bash
+  args:
+    creates: "{{ NVM_DIR }}"
+  environment:
+    HOME: "{{ HOME }}"
+
+- name: Install Node {{ NODE_VERSION }}
+  become: true
+  become_user: "{{ pm2_user }}"
+  shell: bash -c '. {{ NVM_DIR }}/nvm.sh; nvm install {{ NODE_VERSION }}'
+  args:
+    creates: "{{ NVM_DIR }}/versions/node/v{{ NODE_VERSION }}"
+
+- name: Install Node to production location
+  become: yes
+  shell: bash -c '. {{ NVM_DIR }}/nvm.sh; n=$(which node); n=${n%/bin/node}; chmod -R 755 $n/bin/*; cp -r $n/{bin,lib,share} /usr/local'
+  args:
+    creates: "/usr/local/bin/node"
+
+- name: Create Node symlink
+  become: true
+  file:
+    src: /usr/local/bin/node
+    dest: /usr/bin/node
+    state: link

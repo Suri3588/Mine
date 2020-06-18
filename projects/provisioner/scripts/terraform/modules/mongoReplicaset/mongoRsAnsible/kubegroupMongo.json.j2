@@ -1,0 +1,35 @@
+{
+  "USER": "{{ login }}",
+  "hosts": [
+    {
+      "name": "{{ mongos[0]['name'] }}",
+      "networkInterface_0": {
+        "ipAddress": "{{ mongos[0]['ipAddress'] }}"
+      }
+    },{
+      "name": "{{ mongos[1]['name'] }}",
+      "networkInterface_0": {
+        "ipAddress": "{{ mongos[1]['ipAddress'] }}"
+      }
+    },{
+      "name": "{{ mongos[2]['name'] }}",
+      "networkInterface_0": {
+        "ipAddress": "{{ mongos[2]['ipAddress'] }}"
+      }
+    }
+  ],
+  "childConfigurators":  [
+    {
+      "configuratorName":  "Mongo Configurator",
+      "mongoInstanceName":  "{{ dbName }}",
+      "mongoReplicaSetName":  "rs-{{ dbName }}",
+      "mongoDbPort":  "27017",
+      "mongoStunnelPort":  "28017"
+    }
+  ],
+  "fluentdHost": "{{ fluentdHost }}",
+  "fluentdPort": "{{ fluentdPort }}",
+  "resourceName": "{{ resourceName }}",
+  "mongo_major_version": "{{ mongo_major_version }}",
+  "skip_stunnel": "true"
+}

@@ -1,0 +1,33 @@
+[SERVICE]
+  Flush         1
+  Log_Level     info
+  Daemon        off
+  Parsers_File  parsers.conf
+  HTTP_Server   Off
+  HTTP_Listen  0.0.0.0
+  HTTP_Port    2020
+
+{% for child in childConfigurators %}
+[INPUT]
+  Name              tail
+  Tag               {{ resourceName }}.{{ child.mongoReplicaSetName }}
+  Path              /data/{{ child.mongoReplicaSetName }}/log/*.log
+  Parser            mongodb
+  DB                /var/log/flb.db
+  Mem_Buf_Limit     5MB
+  Skip_Long_Lines   On
+  Refresh_Interval  10
+
+{% endfor %}
+
+[FILTER]
+  Name record_modifier
+  Match *
+  Record hostname ${HOSTNAME}
+  Record deployment {{ resourceName }}
+
+[OUTPUT]
+  Name          forward
+  Match         *
+  Host          {{ fluentdHost }}
+  Port          {{ fluentdPort }}

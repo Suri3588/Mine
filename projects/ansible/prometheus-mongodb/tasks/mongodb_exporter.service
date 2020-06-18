@@ -1,0 +1,10 @@
+[Unit]
+Description=Service which runs Mongo Exporter for Prometheus scraping
+ 
+[Service]
+User=prometheus
+ExecStart=/usr/bin/mongodb_exporter
+EnvironmentFile=/etc/systemd/system/mongodb_exporter.d/mongodb_exporter.conf
+ 
+[Install]
+WantedBy=multi-user.target

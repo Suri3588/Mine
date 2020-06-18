@@ -1,0 +1,17 @@
+---
+name: ChunkCount limit breached 3K threshold - Alert
+type: frequency
+index: logstash-*
+num_events: 1
+timeframe:
+  minutes: 5
+realert:
+  hours: 24
+query_key: studyId
+filter:
+- query:
+    query_string:
+      query: "app: study-rollup AND content.chunkCount: >3000"
+alert_subject: "ChunkCount limit breached 3K threshold in {0} Environment"
+alert_subject_args:
+- kubernetes.labels.deployment

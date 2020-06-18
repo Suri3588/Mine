@@ -1,0 +1,28 @@
+---
+- hosts: all
+
+  pre_tasks:
+  - set_fact:
+      node_exporter_version: "0.17.0"
+
+  roles:
+    - role: fluentbit
+    - role: prometheus
+
+  tasks:
+  - name: Install the fluentbit configurations
+    become: yes
+    copy:
+      src: "{{ item }}"
+      dest: "/etc/td-agent-bit/{{ item }}"
+    with_items:
+      - parsers.conf
+      - td-agent-bit.conf
+  
+# Start fluentbit service
+  - name: Starting fluentbit service
+    become: yes
+    service:
+      name: td-agent-bit
+      enabled: yes
+      state: started

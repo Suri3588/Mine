@@ -1,0 +1,7 @@
+.idea
+
+secrets/
+temp/
+terraform.tfstate
+.terraform/
+playbook.retry

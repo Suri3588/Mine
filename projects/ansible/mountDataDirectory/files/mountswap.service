@@ -1,0 +1,12 @@
+[Unit]
+Description=Mounts an Encrypted Swap Partition
+After=walinuxagent.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/mountswap
+ExecStop=/usr/local/bin/mountswap --unmount
+
+[Install]
+WantedBy=multi-user.target

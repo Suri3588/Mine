@@ -1,0 +1,37 @@
+---
+pull_request_jobs:
+  - pr-branch-prep
+
+pipeline_jobs:
+  - build-agent
+
+# The following override the defalts specified in the geerlingguy jenkins role
+
+# later versions aree strict with CSRF which breaks the plugin install (and other stuff)
+# See https://github.com/geerlingguy/ansible-role-jenkins/issues/269
+jenkins_version: "2.191"
+
+# Put the workspace and builds on the /data drive
+# jenkins_java_options: "-Djenkins.install.runSetupWizard=false -Djenkins.model.Jenkins.workspacesDir=/data/workspace/\\${ITEM_FULL_NAME} -Djenkins.model.Jenkins.buildsDir=/data/builds/\\${ITEM_FULL_NAME}"
+
+jenkins_plugins:
+  - workflow-aggregator
+  - workflow-cps 
+  - git
+  - git-client
+  - github
+  - credentials
+  - matrix-auth
+  - matrix-project
+  - email-ext
+  - jira-steps
+  - timestamper
+  - antisamy-markup-formatter
+  - pipeline-utility-steps
+  - configuration-as-code
+  - azure-ad
+  - azure-keyvault
+  - azure-container-agents
+  - azure-container-registry-tasks
+  - azure-vm-agents
+  - pipeline-githubnotify-step

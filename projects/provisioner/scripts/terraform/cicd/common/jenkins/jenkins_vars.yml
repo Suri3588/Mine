@@ -1,0 +1,13 @@
+---
+USER: jenkins
+HOME: /var/lib/jenkins
+BOX_IP: "{{ BoxIp }}"
+serverName: "{{ ServerName }}"
+data_partition_fs: "xfs"
+data_partition_lun: "0"
+data_partition_mountpoint: "/data"
+data_partition_mountopts: "defaults,auto,noatime,nofail"
+data_mount_owner: root
+data_mount_group: root
+data_mount_mode: 0755
+PACKER_VERSION: "1.4.3"

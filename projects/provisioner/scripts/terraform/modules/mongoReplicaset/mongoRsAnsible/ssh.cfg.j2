@@ -1,0 +1,13 @@
+Host {{ classCPlusOffset }}.*
+  UserKnownHostsFile    /dev/null
+  StrictHostKeyChecking no
+  IdentityFile          {{ sshKeyFile }}
+  User                  {{ login }}
+  ProxyCommand          ssh {{ login }}@{{ jumpIp }} -i {{ sshKeyFile }} -W %h:%p
+
+Host {{ jumpIp }}
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  IdentityFile {{ sshKeyFile }}
+  User {{ login }}
+

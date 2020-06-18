@@ -1,0 +1,46 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: edge-server-ddp
+  namespace: nucleus
+  annotations:
+    nginx.ingress.kubernetes.io/upstream-vhost: $service_name.$namespace.svc.cluster.local
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.0"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "70000" # Should not go over 75s see https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_connect_timeout
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "70000"
+    nginx.ingress.kubernetes.io/proxy-next-upstream: "error timeout invalid_header http_502 http_503 http_504"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-tries: "3"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "4k"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0" # dicom-store end point send big payloads
+    # TODO
+    # If you need to add more CSP info which is a certain deployment specific information,
+    # please add it on deployment branch directly (e.g. hub/ hub3/ statrad etc.)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "Content-Security-Policy: default-src 'self' 'unsafe-inline' 'unsafe-eval' *.{{ deployDomain }} blob:; style-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com; font-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.gstatic.com https://themes.googleusercontent.com http://themes.googleusercontent.com; connect-src 'self' https://dc.services.visualstudio.com/v2/track https://*.{{ deployDomain }} ws://*.{{ deployDomain }} wss://*.{{ deployDomain}} ws://localhost:* wss://localhost:* http://localhost:* http://localhost-1:* http://localhost-2:* http://localhost-3:* https://nucleussupport.wpengine.com:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ blob:; frame-src 'self' https://www.google.com/recaptcha/; img-src 'self' blob: data: https://localhost:* https://localhost-1:* https://localhost-2:* https://localhost-3:*{{ frameAncestors }}";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Referrer-Policy: no-referrer";
+      more_set_headers "Feature-Policy: geolocation 'none'; midi 'none'; sync-xhr 'none'; microphone 'none'; camera 'none'; magnetometer 'none'; gyroscope 'none'; speaker 'self'; fullscreen 'self'; payment 'none'";
+    nginx.ingress.kubernetes.io/server-snippet: |
+      ssl_stapling on;
+      ssl_stapling_verify on;
+      resolver 8.8.8.8 8.8.4.4;
+    kubernetes.io/ingress.class: "nginx"
+  labels:
+    app.kubernetes.io/name: edge-server-ddp
+    app.kubernetes.io/part-of: nucleus
+spec:
+  tls:
+    - hosts:
+      - {{ dnsPrefix }}.{{ deployDomain }}
+      secretName: tls-certificate
+  rules:
+  - host: {{ dnsPrefix }}.{{ deployDomain }}
+    http:
+      paths:
+      - path: /edge-services
+        backend:
+          serviceName: edge-server-ddp
+          servicePort: 80

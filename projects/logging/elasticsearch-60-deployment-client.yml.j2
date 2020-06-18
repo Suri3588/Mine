@@ -1,0 +1,124 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: logging
+  name: elasticsearch-client-config
+  labels:
+    app.kubernetes.io/name: elasticsearch
+    app.kubernetes.io/part-of: logging
+    role: client
+data:
+  elasticsearch.yml: |-
+    xpack.license.self_generated.type: basic
+    xpack.security.enabled: true
+
+    cluster.name: ${CLUSTER_NAME}
+    node.name: ${NODE_NAME}
+    discovery.seed_hosts: ${NODE_LIST}
+    cluster.initial_master_nodes: ${MASTER_NODES}
+
+    network.host: ${NETWORK_HOST}
+
+    node:
+      master: false
+      data: false
+      ingest: true
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch-client
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: elasticsearch
+    app.kubernetes.io/part-of: logging
+    role: client
+spec:
+  replicas: {{ esClientNodeCount }} # scale as desired
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: elasticsearch
+      app.kubernetes.io/part-of: logging
+      role: client
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: elasticsearch
+        app.kubernetes.io/part-of: logging
+        role: client
+    spec:
+      nodeSelector:
+        agentpool: esothernodes
+      tolerations:
+      - key: dedicated
+        operator: Equal
+        value: esother
+        effect: NoSchedule
+      initContainers:
+      - name: init-sysctl
+        image: busybox:1.27.2
+        command:
+        - sysctl
+        - -w
+        - vm.max_map_count=262144
+        securityContext:
+          privileged: true
+      containers:
+      - name: elasticsearch-client
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.5.2
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: CLUSTER_NAME
+          value: elasticsearch
+        - name: ELASTIC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch
+              key: elasticsearch-password
+        - name: NETWORK_HOST
+          value: "0.0.0.0"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_LIST
+          value: NODE_LIST_VALUES
+        - name: MASTER_NODES
+          value: MASTER_NODES_VALUES
+        - name: ES_JAVA_OPTS
+          value: -Xms4g -Xmx4g
+        - name: PROCESSORS
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.cpu
+        resources:
+          limits:
+            cpu: 1
+          requests:
+            cpu: 1
+            memory: 6Gi
+        ports:
+        - containerPort: 9200
+          name: http
+        - containerPort: 9300
+          name: transport
+        volumeMounts:
+        - name: config
+          mountPath: /usr/share/elasticsearch/config/elasticsearch.yml
+          readOnly: true
+          subPath: elasticsearch.yml
+        - name: storage
+          mountPath: /data
+      volumes:
+      - name: config
+        configMap:
+          name: elasticsearch-client-config
+      - emptyDir:
+          medium: ""
+        name: "storage"

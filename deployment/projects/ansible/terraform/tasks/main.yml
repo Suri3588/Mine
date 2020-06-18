@@ -1,0 +1,21 @@
+- name: Create terraform directory
+  file:
+    path: /usr/local/src/terraform
+    state: directory
+    mode: 0755
+
+- name: Fetch terraform
+  get_url:
+    url: "https://releases.hashicorp.com/terraform/{{ TERRAFORM_VERSION }}/terraform_{{ TERRAFORM_VERSION }}_linux_amd64.zip"
+    dest: /usr/local/src/terraform/terraform.zip
+
+- name: Re-permission terraform
+  file:
+    path: /usr/local/src/terraform/terraform.zip
+    mode: 0755
+
+- name: Unpack terraform
+  unarchive:
+    copy: no
+    src: /usr/local/src/terraform/terraform.zip
+    dest: /usr/local/bin

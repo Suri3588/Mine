@@ -1,0 +1,15 @@
+---
+- hosts: jump
+
+  tasks:
+  - name: Upload the components needed for initializing the replicaset
+    copy:
+      src: "{{ item }}"
+      dest: "{{ item }}"
+    with_items:
+    - check-replicaset-health.js
+    - create_database.js
+    - initialize-replicaset.js
+    - seed-users.js
+    - set-compatibility.js
+    - seed-exporter-user.js

@@ -1,0 +1,17 @@
+terraform {
+  required_version = "=0.12.19"
+  backend "azurerm" {
+    storage_account_name = "{{ terraformStorageAccount }}"
+    container_name       = "tfstate"
+    key                  = "{{ resourceGroup }}"
+  }
+}
+
+provider "azurerm" {
+  version = "=1.44.0"
+  subscription_id = "{{ subscriptionId }}"
+}
+
+provider "kubernetes" {
+  version = "=1.10.0"
+}

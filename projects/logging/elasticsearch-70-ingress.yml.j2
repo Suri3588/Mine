@@ -1,0 +1,41 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: elasticsearch-client
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: elasticsearch
+    app.kubernetes.io/part-of: logging
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Origin "";
+
+      set $isValidBeatsToken "false";
+
+      # Begin Token Check
+      # End Token Check
+
+      if ($isValidBeatsToken = "false") {
+          return 401;
+      }
+
+      more_clear_headers 'BeatsToken';
+      more_set_input_headers "Authorization: Basic REPLACE_ME_BEATS_AUTH";
+
+spec:
+  tls:
+    - hosts:
+      - elasticsearch-{{ dnsPrefix }}.{{ deployDomain }}
+      secretName: tls-certificate
+  rules:
+  - host: elasticsearch-{{ dnsPrefix }}.{{ deployDomain }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: elasticsearch-client
+          servicePort: 9200
+

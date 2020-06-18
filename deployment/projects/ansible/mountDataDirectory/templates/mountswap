@@ -1,0 +1,34 @@
+#!/bin/bash
+
+if [ "$1" == "--unmount" ]; then
+	if [ -n "`swapon -s`" ]; then
+		echo "Unmounting encrypted swap partition..."
+		swapoff /dev/mapper/swap
+		sleep 2
+		cryptsetup luksClose swap
+	else
+		echo "Encrypted swap partition already unmounted."
+	fi
+else
+	if [ -z "`swapon -s`" ]; then
+		REMAINING_TRIES=100
+		
+		while ! [ -L /dev/disk/azure/scsi1/lun{{ data_partition_lun }} ]; do
+			echo "Waiting for encrypted swap device to appear..."
+			sleep 5
+			REMAINING_TRIES=$(( REMAINING_TRIES - 1))
+			
+			if [ $REMAINING_TRIES -eq 0 ]; then
+				echo "Unable to find encrypted swap partition." 1>&2
+				exit 2
+			fi
+		done
+		
+		echo "Mounting encrypted swap partition..."
+		cryptsetup create -c aes-cbc-essiv:sha256 -s 256 -d /dev/urandom swap /dev/disk/azure/scsi1/lun{{ data_partition_lun }}
+		mkswap /dev/mapper/swap
+		swapon /dev/mapper/swap
+	else
+		echo "Encrypted swap partition already mounted."
+	fi
+fi

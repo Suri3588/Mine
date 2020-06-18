@@ -1,0 +1,105 @@
+    # Begin Deployment REPLACE_ME_RESOURCE_GROUP_NAME
+    - job_name: 'federate-REPLACE_ME_RESOURCE_GROUP_NAME-kube'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/prometheus-scraper/federate'
+      params:
+        'match[]':
+          - '{job=~".+"}'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-passthru-node'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/passthru/9100/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo1-node'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo1/9100/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo1-rs-nucleus'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo1/9217/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo1-rs-ingestion'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo1/9216/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo2-node'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo2/9100/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo2-rs-nucleus'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo2/9217/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo2-rs-ingestion'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo2/9216/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo3-node'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo3/9100/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo3-rs-nucleus'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo3/9217/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    - job_name: 'metrics-REPLACE_ME_RESOURCE_GROUP_NAME-mongo3-rs-ingestion'
+      scrape_interval: 15s
+      honor_labels: true
+      metrics_path: '/REPLACE_ME_RESOURCE_GROUP_NAME/mongo3/9216/metrics'
+      static_configs:
+        - targets:
+          - '10.1.6.5'
+          labels:
+            nucleusenv: 'REPLACE_ME_RESOURCE_GROUP_NAME'
+    # End Deployment REPLACE_ME_RESOURCE_GROUP_NAME
+

@@ -1,0 +1,19 @@
+{
+  "name": "create-k8s-configs",
+  "version": "1.0.0",
+  "license": "MIT",
+  "bin": {
+    "createK8sConfig": "bin/createK8sConfig"
+  },
+  "scripts": {
+    "test": "mocha --recursive"
+  },
+  "devDependencies": {},
+  "dependencies": {
+    "chai": "^4.2.0",
+    "js-yaml": "^3.13.1",
+    "minimist": "^1.2.0",
+    "mocha": "^6.2.2",
+    "sinon-chai": "^3.3.0"
+  }
+}

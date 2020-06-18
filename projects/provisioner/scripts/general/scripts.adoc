@@ -1,0 +1,300 @@
+== Scripting Designs
+=== Ice/Deice Scripts
+Icing an environment means stopping and deallocating all VMs that are part of
+the environment. The following sequence diagrams show how icing/deicing is
+implemented.
+
+==== Single Box Environment
+The following sequence diagrams show the single box ice and de-ice processes.
+
+[plantuml, single-box-ice-sequence, png]
+----
+@startuml
+actor User
+participant Provisioner
+participant Azure
+
+User -> Provisioner : ice-single.sh ice <resource group>
+activate Provisioner
+Provisioner -> Azure : Login
+alt Login Success
+  Azure -> Provisioner : Login Success
+  Provisioner -> Azure : <resource group> Exists?
+  alt exists
+    Azure -> Provisioner : <resource group> exists = true
+    Provisioner -> Azure : Get state of nuke VM
+    alt VM deallocated
+      Azure -> Provisioner : nuke status = VM deallocated
+      Provisioner -> User : VM iced
+    else no data returned
+      Provisioner -> User : Failed nuke does not exist
+    else running
+      Azure -> Provisioner : nuke status != VM deallocated
+      Provisioner -> Azure : Deallocate nuke
+      Azure -> Provisioner : done
+      Provisioner -> Azure : Get state of vm
+      alt VM deallocated
+        Azure -> Provisioner : nuke status = VM deallocated
+        Provisioner -> User : VM iced
+      else
+        Azure -> Provisioner : nuke status != VM deallocated
+        Provisioner -> User : Ice failure
+      end
+    end
+  else does not exist
+    Azure -> Provisioner : <resource group> exists = false
+    Provisioner -> User : Error resource group does not exist
+  end
+  Provisioner -> Azure : Logout
+else Login Failed
+  Azure -> Provisioner : Login Failed
+  Provisioner -> User : Login Failed
+end
+deactivate Provisioner
+
+@enduml
+----
+_Figure 1.1.1 Single Box Ice: Process for icing a single box environment._
+
+[plantuml, single-box-deice-sequence, png]
+----
+@startuml
+actor User
+participant Provisioner
+participant Azure
+
+User -> Provisioner : ice-single.sh deice <resource group>
+activate Provisioner
+Provisioner -> Azure : Login
+alt Login Success
+  Azure -> Provisioner : Login Success
+  Provisioner -> Azure : <resource group> Exists?
+  alt exists
+    Azure -> Provisioner : <resource group> exists = true
+    Provisioner -> Azure : Get state of nuke VM
+    alt VM running
+      Azure -> Provisioner : nuke status = VM running
+      Provisioner -> User : VM de-iced
+    else no data returned
+      Provisioner -> User : Failed nuke does not exist
+    else running
+      Azure -> Provisioner : nuke status != VM running
+      Provisioner -> Azure : Start nuke
+      Azure -> Provisioner : done
+      Provisioner -> Azure : Get state of vm
+      alt VM running
+        Azure -> Provisioner : nuke status = VM running
+        Provisioner -> User : VM de-iced
+      else
+        Azure -> Provisioner : nuke status != VM running
+        Provisioner -> User : De-ice failure
+      end
+    end
+  else does not exist
+    Azure -> Provisioner : <resource group> exists = false
+    Provisioner -> User : Error resource group does not exist
+  end
+  Provisioner -> Azure : Logout
+else Login Failed
+  Azure -> Provisioner : Login Failed
+  Provisioner -> User : Login Failed
+end
+deactivate Provisioner
+
+@enduml
+----
+_Figure 1.1.2 Single Box De-ice: Process for de-icing a single box environment._
+
+==== 2.X Environments
+The following sequence diagrams show the ice and deice processes for 2.X environments.
+
+[plantuml, 2x-severs-ice-sequence, png]
+----
+@startuml
+actor User
+participant Provisioner
+participant Azure
+
+User -> Provisioner : ice-system.sh ice <resource group name>
+activate Provisioner
+
+Provisioner -> Azure : Login
+alt Login Success
+  Azure -> Provisioner : Login success
+  Provisioner -> Azure : <resource group> exists?
+  alt <resource group> exists
+    Azure -> Provisioner : <resource group> exists == true
+    Provisioner -> Azure : Get list of VMs in <resource group>
+    Azure -> Provisioner : List of VMs
+    group ServersStateModify ice [appbuilder edgesvcblder elctrnbldr orch]
+    end
+    loop Over Server Types [lb app mongo monitor]
+      Provisioner -> Provisioner : Add VMs for the server type to serverList
+      group ServersStateModify ice serverList
+      end
+    end
+  else <resource group> does not exist
+    Azure -> Provisioner : <resource group> exists != true
+    Provisioner -> User : Error Resource group does not exist
+  end
+  Provisioner -> Azure : Logout
+else Login Failed
+  Azure -> Provisioner : Login failure
+  Provisioner -> User : Failed login
+end
+deactivate Provisioner
+@enduml
+----
+_Figure 1.2.1 2.X Environment Ice. Sequence diagram showing the ice process for
+a 2.X environment. The ServersStateModify functionality is detailed in Figure
+1.2.3._
+
+[plantuml, 2x-severs-deice-sequence, png]
+----
+@startuml
+actor User
+participant Provisioner
+participant Azure
+
+User -> Provisioner : ice-system.sh deice <resource group name>
+activate Provisioner
+
+Provisioner -> Azure : Login
+alt Login Success
+  Azure -> Provisioner : Login success
+  Provisioner -> Azure : <resource group> exists?
+  alt <resource group> exists
+    Azure -> Provisioner : <resource group> exists == true
+    Provisioner -> Azure : Get list of VMs in <resource group>
+    Azure -> Provisioner : List of VMs
+    loop Over Server Types [monitor mongo app lb]
+      Provisioner -> Provisioner : Add VMs for the server type to serverList
+      group ServersStateModify deice serverList
+      end
+    end
+  else <resource group> does not exist
+    Azure -> Provisioner : <resource group> exists != true
+    Provisioner -> User : Error Resource group does not exist
+  end
+  Provisioner -> Azure : Logout
+else Login Failed
+  Azure -> Provisioner : Login failure
+  Provisioner -> User : Failed login
+end
+deactivate Provisioner
+@enduml
+----
+_Figure 1.2.2 2.X Environment De-ice. Sequence diagram showing the de-ice process
+for a 2.X environment. The ServersStateModify functionality is detailed in Figure
+1.2.3._
+
+[plantuml, 2x-severs-mod-sequence, png]
+----
+@startuml
+actor User
+participant Provisioner
+participant Azure
+
+loop Over serverList
+  Provisioner -> Azure : Get server state
+  Azure -> Provisioner : Server state
+  alt State Is desiredState
+    Provisioner -> User : Server complete
+  else State empty
+    Provisioner -> User : Server not found
+  else
+    Provisioner -> Provisioner : Add server to modify list
+  end
+end
+
+loop Over Modify List
+  Provisioner --> Azure : Change server to desiredState
+end
+
+group Wait for all responses
+  Azure --> Provisioner : Server state changed xN
+end
+
+loop Over Modify List
+  Provisioner -> Azure : Get server state
+  Azure -> Provisioner : Server state
+  alt State Is desiredState
+    Provisioner -> User : Server complete
+  end
+end
+
+@enduml
+----
+_Figure 1.2.3 Servers State Modification. Sequence diagram showing how the state
+of a list of servers are modified. Method is called using
+ServerStateModification desiredState serverList._
+
+[plantuml, 2x-severs-ancillary-ice-sequence, png]
+----
+@startuml
+actor User
+participant Provisioner
+participant Azure
+
+User -> Provisioner : ice-ancillary.sh ice <resource group name>
+activate Provisioner
+
+Provisioner -> Azure : Login
+alt Login Success
+  Azure -> Provisioner : Login success
+  Provisioner -> Azure : <resource group> exists?
+  alt <resource group> exists
+    Azure -> Provisioner : <resource group> exists == true
+    group ServersStateModify ice [appbuilder edgesvcblder elctrnbldr orch]
+    end
+  else <resource group> does not exist
+    Azure -> Provisioner : <resource group> exists != true
+    Provisioner -> User : Error Resource group does not exist
+  end
+  Provisioner -> Azure : Logout
+else Login Failed
+  Azure -> Provisioner : Login failure
+  Provisioner -> User : Failed login
+end
+deactivate Provisioner
+@enduml
+----
+_Figure 1.2.4 2.X Ancillary Server Ice. Sequence diagram showing the ice process
+for the ancillary servers in a 2.X environment. The ServersStateModify
+functionality is detailed in Figure 1.2.3._
+
+[plantuml, 2x-severs-ancillary-deice-sequence, png]
+----
+@startuml
+actor User
+participant Provisioner
+participant Azure
+
+User -> Provisioner : ice-ancillary.sh ice <resource group name>
+activate Provisioner
+
+Provisioner -> Azure : Login
+alt Login Success
+  Azure -> Provisioner : Login success
+  Provisioner -> Azure : <resource group> exists?
+  alt <resource group> exists
+    Azure -> Provisioner : <resource group> exists == true
+    group ServersStateModify deice [appbuilder edgesvcblder elctrnbldr orch]
+    end
+  else <resource group> does not exist
+    Azure -> Provisioner : <resource group> exists != true
+    Provisioner -> User : Error Resource group does not exist
+  end
+  Provisioner -> Azure : Logout
+else Login Failed
+  Azure -> Provisioner : Login failure
+  Provisioner -> User : Failed login
+end
+deactivate Provisioner
+@enduml
+----
+_Figure 1.2.5 2.X Ancillary Server De-ice. Sequence diagram showing the de-ice
+process for the ancillary servers in a 2.X enironment. The ServersStateModify
+functionality is detailed in Figure 1.2.3._
+
+=== Snapshot Scripts

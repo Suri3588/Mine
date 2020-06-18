@@ -1,0 +1,146 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: meteor-ui-ddp
+  namespace: nucleus
+  labels:
+    app.kubernetes.io/name: meteor-ui-ddp
+    app.kubernetes.io/part-of: nucleus
+spec:
+  replicas: 8
+  strategy:
+    rollingUpdate:
+      maxSurge: 6
+      maxUnavailable: 2
+  minReadySeconds: 5
+  template:
+    metadata:
+      labels:
+        app: meteor-ui-ddp
+        deployment: {{ resourceGroup }}
+      annotations:
+        fluentbit.io/parser: nucleus
+        linkerd.io/inject: enabled
+        config.linkerd.io/proxy-cpu-limit: "2" # Check the resources section if you are changing this value.
+        config.linkerd.io/proxy-cpu-request: "0.1" # Check the resources section if you are changing this value.
+        config.linkerd.io/proxy-memory-limit: 6Gi # Check the resources section if you are changing this value.
+        config.linkerd.io/proxy-memory-request: 200Mi # Check the resources section if you are changing this value.
+    spec:
+      nodeSelector:
+        agentpool: uipool
+      hostAliases:
+      {% for mongo in mongos %}
+      - ip: "{{ mongo.ipAddress }}"
+        hostnames:
+        - "{{ mongo.name }}"
+      {% endfor %}
+      containers:
+      - name: meteor-ui-ddp
+        image: {{ dockerRegistry }}{{ radconnectImage }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - node
+        args:
+        - "--max_old_space_size=5120"
+        - "main.js"
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: "100Mi"
+          limits:
+            cpu: "2"
+            memory: "6Gi"
+# The readinessProbe and livenessProbe are used to by k8s to decide to start sending traffic or
+# restart a Pod. Ideally, we would have a /healthz endpoints to check if the application is ready to
+# receive traffic. We do not have one today watch the issue https://jira.statrad.com/browse/NIX-14801
+# To see when this will be properly implemented. By now we are taking advantages of meteor default
+# behave calling the path `/` that returns http 200 Ok if the app is in a working state and fail or
+# takes a long time to respond if the application is having some problem.
+#
+# Note:
+# initialDelaySeconds delay showed up to be important, and this application takes a long time to start
+# working and if we define a short time it will lead to an infinity restart and the Pod would never
+# start receiving traffic, 120 seems to be adequate for the moment, note that we used the same
+# value for the shutdown (see: preStop in lifecycle)
+#
+        readinessProbe:
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          httpGet:
+            path: /
+            port: 80
+        livenessProbe:
+          httpGet:
+           path: /
+           port: 80
+          failureThreshold: 10
+          periodSeconds: 10
+          initialDelaySeconds:  150
+          timeoutSeconds: 5
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/bash", "-c", "sleep 120"] # This is to improve a graceful shutdown
+        envFrom:
+        - configMapRef:
+            name: shared-config
+        - configMapRef:
+            name: meteor-ui-ddp-config
+        env:
+        - name: MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: MONGO_URL
+        - name: MONGO_OPLOG_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: MONGO_OPLOG_URL
+        - name: NUCLEUS_INGESTION_MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: NUCLEUS_INGESTION_MONGO_URL
+        - name: METEOR_SETTINGS
+          valueFrom:
+            secretKeyRef:
+              name: image-service-secret
+              key: METEOR_SETTINGS
+        - name: COMPLETE_REGISTRATION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: complete-registration-secret
+              key: COMPLETE_REGISTRATION_SECRET
+        - name: CAPTCHA_SITE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ux-secrets
+              key: CAPTCHA_SITE_KEY
+        - name: CAPTCHA_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ux-secrets
+              key: CAPTCHA_SECRET_KEY
+        - name: APP_INSIGHTS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-insights-secrets
+              key: APP_INSIGHTS_KEY
+      imagePullSecrets:
+      - name: regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meteor-ui-ddp
+  namespace: nucleus
+  labels:
+    app.kubernetes.io/name: meteor-ui-ddp
+    app.kubernetes.io/part-of: nucleus
+spec:
+  ports:
+  - port: 80
+  selector:
+    app: meteor-ui-ddp

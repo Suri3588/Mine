@@ -1,0 +1,116 @@
+variable "kubernetes_version" {
+  type = string
+  default = "1.14.8"
+}
+
+variable "classCPlus" {
+  type = string
+  default = "10.1.0"
+}
+
+variable "classCPlusOffset" {
+  type = string
+  default = "10.1.6"
+}
+
+variable "clusterAdminGuid" {
+  type = string
+}
+
+variable "clusterViewerGuid" {
+  type = string
+}
+
+variable "dbName" {
+  type = string
+  default = "kubegroup"
+}
+
+variable "dnsZone" {
+  type = string
+  default = "{{ dnsZone }}"
+}
+
+variable "ingressIp" {
+  type = string
+  default = "{{ internalIngressIp }}"
+}
+
+variable "isSharedService" {
+  type = string
+  default = "{{ isSharedService }}"
+}
+
+variable "login" {
+  type = string
+  default = "nucleus"
+}
+
+variable "proxyServerName" {
+  type = string
+  default = "10.1.6.5"
+}
+
+variable "primaryLocation" {
+  type    = string
+  default = "Central US"
+}
+
+variable "regaksPublicKey" {
+  type = string
+}
+
+variable "resourceName" {
+  type    = string
+  default = "registry"
+}
+
+variable "sshPublicKey" {
+  type = string
+}
+
+variable "deploymentDir" {
+  type = string
+  description = "populated from the TF_VAR_deploymentDir environment variable set in extract-secrets.sh"
+}
+
+variable "projectsDir" {
+  type = string
+  default = "{{ projectsDir }}"
+}
+
+variable "passthruSecretsFile" {
+  type = string
+  default = "{{ secretsDir }}/passthru.json"
+}
+
+variable "passthruLocalSecretsFile" {
+  type = string
+  default = "{{ secretsDir }}/passthru-local.json"
+}
+
+variable "jumpboxSecretsFile" {
+  type = string
+  default = "{{ secretsDir }}/jumpbox.json"
+}
+
+variable "rootCertificate" {
+  type = string
+  default = "{{ secretsDir }}/root.crt"
+}
+
+variable "sshPrivateKeyFile" {
+  type = string
+  default = "{{ secretsDir }}/ssh_rsa"
+}
+
+variable "sslCertificate" {
+  type = string
+  default = "{{ secretsDir }}/ssl.crt"
+}
+
+variable "sslCertificateKey" {
+  type = string
+  default = "{{ secretsDir }}/ssl.key"
+}
+

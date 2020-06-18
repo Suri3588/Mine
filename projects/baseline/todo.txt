@@ -1,0 +1,9 @@
+TODO:
+[x] update internal ingress to internal load balancer
+[x] fluentbit to fluentd, separate "cluster monitoring package" that gets deployed to every cluster
+[ ] mirror used containers to acr
+[x] separate out linkerd manifests and test node-exporter with linkerd prometheus
+[x] set up multiple fluentbit to fluentd, multiple fluentd to elasticsearch  (multiple fluentbit to single fluentd)
+[ ] fix linkerd prometheus not being able to talk to apiserver
+[x] get prometheus federation working and have metricbeat poll global prometheus
+[ ] configure auth for prometheus, fluentd, elasticsearch

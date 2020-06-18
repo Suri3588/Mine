@@ -1,0 +1,25 @@
+- name: Install the kubectl apt key
+  become: true
+  shell: curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+- name: Modify apt-get sources list
+  become: true
+  shell: touch /etc/apt/sources.list.d/kubernetes.list && echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list
+
+- name: Update apt
+  become: true
+  apt:
+    upgrade: yes
+    update_cache: yes
+
+# https://medium.com/faun/using-different-kubectl-versions-with-multiple-kubernetes-clusters-a3ad8707b87b
+# You must use a kubectl version that is within one minor version difference of your cluster. 
+# For example, a v1.2 client should work with v1.1, v1.2, and v1.3 master.
+# Using the latest version of kubectl helps avoid unforeseen issues.
+#
+# To check kubectl version
+# $ kubectl version
+- name: Install kubectl
+  become: true
+  apt:
+    name: kubectl=1.13.10-00

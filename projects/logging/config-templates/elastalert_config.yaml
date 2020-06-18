@@ -1,0 +1,16 @@
+---
+rules_folder: /opt/rules
+scan_subdirectories: false
+run_every:
+  minutes: 1
+buffer_time:
+  minutes: 15
+es_host: elasticsearch-client
+es_port: 9200
+es_username: elastic
+es_password: ELASTICSEARCH_PASSWORD
+writeback_index: elastalert
+use_ssl: False
+verify_certs: True
+alert_time_limit:
+  minutes: 2880

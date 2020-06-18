@@ -1,0 +1,253 @@
+credentials:
+  system:
+    domainCredentials:
+    - credentials:
+      - usernamePassword:
+          description: credentials to GitHub
+          id: Github
+          password: "{{ GithubProdPwd }}"
+          scope: GLOBAL
+          username: {{ GithubProdUser }}
+      - usernamePassword:
+          description: "Admin user on the Windows Build Agents"
+          id: "nucleusbuilder"
+          password: "{{ NucleusBuilderPwd }}"
+          scope: GLOBAL
+          username: "nucleusbuilder"
+      - usernamePassword:
+          description: "Jenkins Service Principal User"
+          id: "JenkinsSvcPrincipalUser"
+          password: "{{ JenkinsSvcAPIKey }}"
+          scope: GLOBAL
+          username: "{{ JenkinsSvcClientId }}"
+      - azure:
+          azureEnvironmentName: "Azure"
+          clientId: "{{ JenkinsSvcClientId }}"
+          clientSecret: "{{ JenkinsSvcAPIKey }}"
+          description: "Jenkins service principal"
+          id: "JenkinsProdPrincipal"
+          scope: GLOBAL
+          subscriptionId: "{{ SubscriptionId }}"
+          tenant: "{{ JenkinsSvcTenantId }}"
+      - azure:
+          azureEnvironmentName: "Azure"
+          clientId: "{{ JenkinsDevSvcClientId }}"
+          clientSecret: "{{ JenkinsDevSvcAPIKey }}"
+          description: "Jenkins service principal"
+          id: "JenkinsDevPrincipal"
+          scope: GLOBAL
+          subscriptionId: "{{ DevSubscriptionId }}"
+          tenant: "{{ JenkinsDevSvcTenantId }}"
+security:
+  scriptApproval:
+    approvedSignatures:
+    - "method java.util.Collection toArray"
+    - "new net.sf.json.JSONObject"
+    - "staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods findAll java.lang.String\
+      \ java.lang.String"
+
+jenkins:
+  agentProtocols:
+  - "JNLP4-connect"
+  - "Ping"
+  authorizationStrategy:
+    azureAdMatrix:
+      permissions:
+      - "Job/Build:authenticated"
+      - "Job/Cancel:authenticated"
+      - "Job/Discover:authenticated"
+      - "Job/Read:authenticated"
+      - "Job/Workspace:authenticated"
+      - "Overall/Administer:dreich@nucleushealth.onmicrosoft.com"
+      - "Overall/Administer:bhagaman@nucleushealth.onmicrosoft.com"
+      - "Overall/Read:authenticated"
+      - "View/Read:authenticated"
+  securityRealm:
+    azure:
+      clientId: "{{ JenkinsAadClientId }}"
+      clientSecret: "{{ JenkinsAadAPIKey }}"
+      tenant: "{{ JenkinsAadTenantId }}"
+  slaveAgentPort: 50000
+  systemMessage: |
+    <b>Welcome to our build server</b><br/>
+    <small><font color="grey">Terraformed from {{ GitHash }}</font></small><br/>
+    <br/>
+    This Jenkins is 100% configured and managed 'as code'.<br/>
+    Config is now mostly handled by the 'Jenkins Configuration as Code' (JCasC) plugin.
+  labelString: "pop"
+  markupFormatter:
+    rawHtml:
+      disableSyntaxHighlighting: false
+  clouds:
+  - aci:
+      credentialsId: "JenkinsProdPrincipal"
+      name: "jenkins-builder-aci"
+      resourceGroup: "{{ ResourceGroupName }}"
+      templates:
+      - command: "jenkins-slave -url ^${rootUrl} ^${secret} ^${nodeName}"
+        cpu: "1"
+        image: "{{ DevRegistryUrl }}/jenkins/jenkins-node-agent:0.0.1"
+        label: "linux"
+        memory: "1.5"
+        name: "AciNodeBuilder"
+        osType: "Linux"
+        privateRegistryCredentials:
+        - credentialsId: "JenkinsSvcPrincipalUser"
+          url: "https://{{ DevRegistryUrl }}"
+        retentionStrategy: "containerOnce"
+        rootFs: "/home/jenkins"
+        timeout: 10
+      - command: "jenkins-slave -url ^${rootUrl} ^${secret} ^${nodeName}"
+        cpu: "1"
+        image: "{{ DevRegistryUrl }}/jenkins/jenkins-kube-agent:0.0.1"
+        label: "kubedeploy"
+        memory: "1.5"
+        name: "AciK8sDeployer"
+        osType: "Linux"
+        privateRegistryCredentials:
+        - credentialsId: "JenkinsSvcPrincipalUser"
+          url: "https://{{ DevRegistryUrl }}"
+        retentionStrategy: "containerOnce"
+        rootFs: "/home/jenkins"
+        timeout: 10
+      - command: "jenkins-slave -url ^${rootUrl} ^${secret} ^${nodeName}"
+        cpu: "4"
+        image: "{{ DevRegistryUrl }}/jenkins/jenkins-meteor-agent:1.8.0"
+        label: "meteor18"
+        memory: "12"
+        name: "AciMeteor18Builder"
+        osType: "Linux"
+        privateRegistryCredentials:
+        - credentialsId: "JenkinsSvcPrincipalUser"
+          url: "https://{{ DevRegistryUrl }}"
+        retentionStrategy: "containerOnce"
+        rootFs: "/home/jenkins"
+        timeout: 10
+      - command: "jenkins-slave -url ^${rootUrl} ^${secret} ^${nodeName}"
+        cpu: "4"
+        image: "{{ DevRegistryUrl }}/jenkins/jenkins-test-agent:5935543"
+        label: "meteor18test"
+        memory: "12"
+        name: "AciMeteor18Tester"
+        osType: "Linux"
+        privateRegistryCredentials:
+        - credentialsId: "JenkinsSvcPrincipalUser"
+          url: "https://{{ DevRegistryUrl }}"
+        retentionStrategy: "containerOnce"
+        rootFs: "/home/jenkins"
+        timeout: 10
+      - command: "jenkins-slave -url ^${rootUrl} ^${secret} ^${nodeName}"
+        cpu: "2"
+        image: "{{ DevRegistryUrl }}/jenkins/jenkins-prep-agent:5e32ab1"
+        label: "meteor18prep"
+        memory: "4"
+        name: "AciMeteor18Prep"
+        osType: "Linux"
+        privateRegistryCredentials:
+        - credentialsId: "JenkinsSvcPrincipalUser"
+          url: "https://{{ DevRegistryUrl }}"
+        retentionStrategy: "containerOnce"
+        rootFs: "/home/jenkins"
+        timeout: 10
+      - command: "jenkins-slave -url ^${rootUrl} ^${secret} ^${nodeName}"
+        cpu: "2"
+        image: "{{ DevRegistryUrl }}/jenkins/jenkins-test-e2e-agent:3b286ba"
+        label: "teste2e"
+        memory: "4"
+        name: "AciTeste2e"
+        osType: "Linux"
+        privateRegistryCredentials:
+        - credentialsId: "JenkinsSvcPrincipalUser"
+          url: "https://{{ DevRegistryUrl }}"
+        retentionStrategy: "containerOnce"
+        rootFs: "/home/jenkins"
+        timeout: 10
+  - azureVM:
+      azureCredentialsId: "JenkinsProdPrincipal"
+      cloudName: "jenkins-vm-agents"
+      configurationStatus: "pass"
+      deploymentTimeout: 1200
+      existingResourceGroupName: "{{ ResourceGroupName }}"
+      maxVirtualMachinesLimit: 5
+      resourceGroupReferenceType: "existing"
+      vmTemplates:
+      - agentLaunchMethod: "SSH"
+        credentialsId: "nucleusbuilder"
+        diskType: "managed"
+        doNotUseMachineIfInitFails: true
+        enableMSI: false
+        enableUAMI: false
+        executeInitScriptAsRoot: true
+        imageReference:
+          offer: "WindowsServer"
+          publisher: "MicrosoftWindowsServer"
+          sku: "2016-Datacenter"
+          version: "latest"
+        imageTopLevelType: "advanced"
+        initScript: |-
+          # Download and Install Java
+          Set-ExecutionPolicy Unrestricted
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          #Default workspace location
+          Set-Location C:\
+          $source = "http://download.oracle.com/otn-pub/java/jdk/8u131-b11/d54c1d3a095b4ff2b6607d096fa80163/jdk-8u131-windows-x64.exe"
+          $destination = "C:\jdk-8u131-windows-x64.exe"
+          $client = new-object System.Net.WebClient
+          $cookie = "oraclelicense=accept-securebackup-cookie"
+          $client.Headers.Add([System.Net.HttpRequestHeader]::Cookie, $cookie)
+          $client.downloadFile($source, $destination)
+          $proc = Start-Process -FilePath $destination -ArgumentList "/s" -Wait -PassThru
+          $proc.WaitForExit()
+          [System.Environment]::SetEnvironmentVariable("JAVA_HOME", "c:\Program Files\Java\jdk1.8.0_131", "Machine")
+          $Env:Path += ";c:\Program Files\Java\jdk1.8.0_131\bin"
+          $Env:Path += ";c:\Program Files\Git\bin;C:\Program Files\Git\usr\bin"
+          [System.Environment]::SetEnvironmentVariable("PATH", $Env:Path, "Machine")
+          # Stop Windows update service
+          sc.exe config wuauserv start=disabled
+          sc.exe stop wuauserv
+          # Stop Windows Defender
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          # Install chocolaty
+          Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+          # Install tools
+          choco install -y 7zip
+          choco install -y git /GitAndUnixToolsOnPath
+          choco install -y nodejs-lts --version 10.16.3
+          choco install -y meteor -params=/RELEASE:1.8.0.2
+          choco install -y python2
+          choco install -y --allow-empty-checksums pip
+          refreshenv
+          c:\Python27\Scripts\pip install jinja2
+        labels: "edge"
+        location: "{{ ResourceGroupLocation }}"
+        newStorageAccountName: ""
+        noOfParallelJobs: 1
+        osDiskSize: 0
+        osType: "Windows"
+        preInstallSsh: true
+        retentionStrategy:
+          azureVMCloudRetentionStrategy:
+            idleTerminationMinutes: 60
+        shutdownOnIdle: false
+        storageAccountNameReferenceType: "new"
+        storageAccountType: "Standard_LRS"
+        templateDisabled: false
+        templateName: "esbuildagent"
+        usageMode: "Use this node as much as possible"
+        usePrivateIP: false
+        virtualMachineSize: "Standard_B4ms"
+        subnetName: "resgrp-subnet"
+        virtualNetworkName: "resgrp-vnet"
+unclassified:
+  azureKeyVault:
+    credentialID: "JenkinsProdPrincipal"
+    keyVaultURL: "https://nucleuspipelinevault.vault.azure.net/"
+  jiraStepsConfig:
+    sites:
+    - loginType: "BASIC"
+      name: "Nucleus"
+      password: "{{ JiraPwd }}"
+      readTimeout: 10000
+      timeout: 10000
+      url: "https://jira.statrad.com"
+      userName: "{{ JiraUsername }}"

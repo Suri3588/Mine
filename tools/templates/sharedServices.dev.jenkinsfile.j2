@@ -1,0 +1,71 @@
+def QA_PR
+def withGitCreds 
+pipeline {
+    agent { label 'kubedeploy' } 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+    environment {
+        ENV_NAME="{{ resourceGroup }}"
+        DOCKER_REGISTRY  = "{{ dockerRegistry }}"
+        BRANCH = "{{ branchName }}"
+    }
+    stages {
+		stage('Pre-build') {
+			steps {
+				script {
+				  withCredentials([
+					azureServicePrincipal(credentialsId:'{{ jenkinsServicePrincipal }}',
+					clientSecretVariable: 'ARM_CLIENT_SECRET', 
+					clientIdVariable: 'ARM_CLIENT_ID', 
+					tenantIdVariable: 'ARM_TENANT_ID'
+					)]) {
+						sh "az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID"
+						dir("deployment") {
+							sh '''#!/bin/bash
+								source extract-secrets.sh --silent
+								KUBECONFIG=$deploymentDir/$secretsDir/k8s-conf 
+								export KUBECONFIG
+								kubectl config use-context "api-deployment-account-default-$resourceGroup-aks"
+							'''
+						}
+					}
+					currentBuild.displayName = "$ENV_NAME"
+					withGitCreds = load "${env.WORKSPACE}/tools/withGitCreds.groovy"
+					gitCredId = withGitCreds.setId('Github')
+
+				}
+			}
+		}
+
+
+
+        stage('Deploing Kb8s') {
+            parallel {
+                stage('Deploy to dev') {
+
+                    steps {
+                        script {
+                            dir("deployment") {
+                                withCredentials([
+                                azureServicePrincipal(credentialsId:'{{ jenkinsServicePrincipal }}',
+                                clientSecretVariable: 'ARM_CLIENT_SECRET', 
+                                clientIdVariable: 'ARM_CLIENT_ID', 
+                                tenantIdVariable: 'ARM_TENANT_ID'
+                                )]) {
+                                    sh "az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID"
+                                    sh """#!/bin/bash
+                                    source extract-secrets.sh --silent
+                                    ./update-deployment.sh
+                                    """
+                                }
+                            }
+                            //apply_kb8s_deploy();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

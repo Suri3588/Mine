@@ -1,0 +1,47 @@
+- name: create group
+  become: true
+  group:
+    name: prometheus
+    state: present
+- name: create user
+  become: true
+  user:
+    name: prometheus
+    group: prometheus
+    createhome: no
+    system: yes
+    state: present
+- name: create opt directory for prometheus
+  become: true
+  file:
+    path: /opt/prometheus
+    state: directory
+- name: download node exporter
+  become: true
+  get_url:
+    url: https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+    dest: /opt/prometheus
+- name: unarchive node exporter
+  become: true
+  unarchive:
+    remote_src: yes
+    src: /opt/prometheus/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+    dest: /opt/prometheus
+- name: create symlink to node exporter
+  become: true
+  file:
+    path: /usr/bin/node_exporter
+    state: link
+    src: /opt/prometheus/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter
+- name: install unit file to systemd
+  become: true
+  template:
+    src: node_exporter.service
+    dest: /etc/systemd/system/node_exporter.service
+- name: configure systemd to use service
+  become: true
+  systemd:
+    daemon_reload: yes
+    enabled: yes
+    state: started
+    name: node_exporter.service

@@ -1,0 +1,25 @@
+- name: Modify apt-get sources list
+  become: true
+  shell: echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ xenial main" | tee /etc/apt/sources.list.d/azure-cli.list
+
+- name: Get the MS signing key
+  become: true
+  shell: curl -L https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+
+- name: Install https transport for apt
+  become: true
+  apt:
+    name: apt-transport-https
+    state: latest
+
+- name: Update apt
+  become: true
+  apt:
+    upgrade: yes
+    update_cache: yes
+
+- name: Install azure-cli
+  become: true
+  apt:
+    name: azure-cli
+    state: latest

@@ -1,0 +1,17 @@
+---
+- hosts: all
+  become: yes
+  gather_facts: False
+
+  #vars:
+  #  pm2_user: "FILLED FROM XVARS"
+  #  HOME: "FILLED FROM XVARS"
+  #  NVM_DIR: "FILLED FROM XVARS"
+  #  NVM_VERSION: "FILLED FROM XVARS"
+  #  NODE_VERSION: "FILLED FROM XVARS"
+
+  environment:
+    HOME: "{{ HOME }}"
+
+  roles:
+    - nvmAndNode

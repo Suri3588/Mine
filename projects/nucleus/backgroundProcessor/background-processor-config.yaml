@@ -1,0 +1,11 @@
+# using image-data-service-config.yaml as an example
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: background-processor-config
+  namespace: nucleus
+data:
+  NUCLEUS_LOG_INFO: '*'
+  NUCLEUS_LOG_DEBUG: '*SystemEvents*' # This is important to debug events processing problems from kibana
+  NUCLEUS_SERVICE_ROLE: background-processor
+  PORT: '0'

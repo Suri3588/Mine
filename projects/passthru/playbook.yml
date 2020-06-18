@@ -1,0 +1,34 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+
+  tasks:
+  - name: Populate the inventory
+    template:
+      src: inventory.j2
+      dest: "./passthru/inventory"
+      mode: 0664
+
+  - name: Populate waitForBoxen
+    template:
+      src: waitForBoxen.yml.j2
+      dest: "./passthru/waitForBoxen.yml"
+      mode: 0664
+
+  - name: Populate ssh configuration
+    template:
+      src: ssh.cfg.j2
+      dest: "./passthru/ssh.cfg"
+      mode: 0664
+    
+  - name: Populate ansible configuration
+    template:
+      src: ansible.cfg.j2
+      dest: "./passthru/ansible.cfg"
+      mode: 0664
+
+  - name: Populate fluentbit configuration
+    template:
+      src: td-agent-bit.conf.j2
+      dest: "./passthru/td-agent-bit.conf"
+      mode: 0664

@@ -1,0 +1,61 @@
+{
+  "description" : "Pipeline for parsing Nucleus Health app messages.",
+  "on_failure" : [
+    {
+      "set" : {
+        "field" : "@timestamp",
+        "value" : "{{ _ingest.timestamp }}"
+      }
+
+    }
+  ],
+  "processors" : [
+    {
+      "grok" : {
+        "field" : "message",
+        "ignore_missing" : true,
+        "patterns" : [
+          "%{TIMESTAMP_ISO8601:nucleus.app.timestamp}\t%{DATA:nucleus.app.instance}\t(%{DATA:nucleus.app.level})?\t\t%{GREEDYDATA:nucleus.app.message}",
+          "%{TIMESTAMP_ISO8601:nucleus.app.timestamp}\t%{DATA:nucleus.app.instance}\t(%{DATA:nucleus.app.level})?\t%{DATA:nucleus.app.source}\t%{GREEDYDATA:nucleus.app.message}",
+          "%{TIMESTAMP_ISO8601:nucleus.app.timestamp}\t%{DATA:nucleus.app.instance}\t\t%{GREEDYDATA:nucleus.app.message}",
+          "%{TIMESTAMP_ISO8601:nucleus.app.timestamp}\t%{DATA:nucleus.app.instance}\t(%{DATA:nucleus.app.level})?\t%{GREEDYDATA:nucleus.app.message}",
+          "%{GREEDYDATA:nucleus.app.message}"
+        ]
+      }
+    },
+    {
+      "gsub" : {
+        "field": "nucleus.app.message",
+        "pattern": "^\\| *",
+        "replacement": ""
+      }
+    },
+    {
+      "gsub" : {
+        "field": "nucleus.app.message",
+        "pattern": " *\\|$",
+        "replacement": ""
+      }
+    },
+    {
+      "remove" : {
+        "field" : "message"
+      }
+    },
+    {
+      "date" : {
+        "field" : "nucleus.app.timestamp",
+        "formats" : [
+          "ISO8601"
+        ],
+        "ignore_failure" : true,
+        "target_field" : "@timestamp"
+      }
+    },
+    {
+      "remove" : {
+        "field" : "nucleus.app.timestamp"
+      }
+    }
+  ]
+}

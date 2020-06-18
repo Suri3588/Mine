@@ -1,0 +1,137 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kibana-logging
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: kibana
+    app.kubernetes.io/part-of: logging
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/auth-url: "https://kibana-{{ dnsPrefix }}.{{ deployDomain }}/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://kibana-{{ dnsPrefix }}.{{ deployDomain }}/oauth2/start?rd=$escaped_request_uri"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Origin "";
+spec:
+
+  tls:
+    - hosts:
+      - kibana-{{ dnsPrefix }}.{{ deployDomain }}
+      secretName: tls-certificate
+  rules:
+  - host: kibana-{{ dnsPrefix }}.{{ deployDomain }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: kibana-logging
+          servicePort: 5601
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kibana-oauth2-proxy
+  namespace: ingress-nginx
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - host: kibana-{{ dnsPrefix }}.{{ deployDomain }}
+      http:
+        paths:
+          - path: /oauth2
+            backend:
+              serviceName: oauth2-proxy
+              servicePort: 80
+  tls:
+  - hosts:
+    - kibana-{{ dnsPrefix }}.{{ deployDomain }}
+    secretName: tls-certificate
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana-logging
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: kibana
+    app.kubernetes.io/part-of: logging
+spec:
+  ports:
+  - port: 5601
+    protocol: TCP
+    targetPort: ui
+  selector:
+    app.kubernetes.io/name: kibana
+    app.kubernetes.io/part-of: logging
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana-logging
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: kibana
+    app.kubernetes.io/part-of: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kibana
+      app.kubernetes.io/part-of: logging
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kibana
+        app.kubernetes.io/part-of: logging
+      # annotations:
+      #   seccomp.security.alpha.kubernetes.io/pod: 'docker/default'
+    spec:
+      nodeSelector:
+        agentpool: monpool
+      serviceAccountName: kibana
+      containers:
+      - name: kibana-logging
+        image: docker.elastic.co/kibana/kibana:7.5.2
+        resources: {}
+        env:
+          - name: ELASTICSEARCH_HOSTS
+            value: http://elasticsearch-client:9200
+          - name: ELASTICSEARCH_REQUESTTIMEOUT
+            value: "90000"
+          - name: SERVER_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: SERVER_HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+        volumeMounts:
+        - name: config
+          mountPath: /usr/share/kibana/config/kibana.yml
+          subPath: kibana.yml           
+          readOnly: true
+        ports:
+        - containerPort: 5601
+          name: ui
+          protocol: TCP
+      volumes:
+      - name: config
+        secret:
+          secretName: kibana-config
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kibana
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: kibana
+    app.kubernetes.io/part-of: logging

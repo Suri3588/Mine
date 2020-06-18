@@ -1,0 +1,294 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: prometheus
+  namespace: logging
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/auth-url: "https://prometheus-{{ dnsPrefix }}.{{ deployDomain }}/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://prometheus-{{ dnsPrefix }}.{{ deployDomain }}/oauth2/start?rd=$escaped_request_uri"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Origin "";
+spec:
+  tls:
+    - hosts:
+      - prometheus-{{ dnsPrefix }}.{{ deployDomain }}
+      secretName: tls-certificate
+  rules:
+  - host: prometheus-{{ dnsPrefix }}.{{ deployDomain }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: prometheus
+          servicePort: 9090
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: prometheus-oauth2-proxy
+  namespace: ingress-nginx
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - host: prometheus-{{ dnsPrefix }}.{{ deployDomain }}
+      http:
+        paths:
+          - path: /oauth2
+            backend:
+              serviceName: oauth2-proxy
+              servicePort: 80
+  tls:
+  - hosts:
+    - prometheus-{{ dnsPrefix }}.{{ deployDomain }}
+    secretName: tls-certificate
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: prometheus
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+  ports:
+  - name: admin-http
+    port: 9090
+    targetPort: 9090
+
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+  name: prometheus
+  namespace: logging
+spec:
+  replicas: 1
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/part-of: logging
+    spec:
+      nodeSelector:
+        agentpool: monpool
+      serviceAccountName: prometheus
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: ["sh", "-c", "chmod a+rw /data"]
+          volumeMounts:
+            - name: prometheus-data
+              mountPath: /data
+      containers:
+      - args:
+        - --storage.tsdb.retention=90d
+        - --config.file=/etc/prometheus/prometheus.yml
+        - "--web.external-url=https://prometheus-{{ dnsPrefix }}.{{ deployDomain }}/"
+        image: prom/prometheus:v2.10.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+        name: prometheus
+        ports:
+        - containerPort: 9090
+          name: admin-http
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+        resources: {}
+        volumeMounts:
+        - mountPath: /prometheus/data
+          name: prometheus-data
+        - mountPath: /etc/prometheus/prometheus.yml
+          name: prometheus-config
+          readOnly: true
+          subPath: prometheus.yml
+        - mountPath: /etc/prometheus/rules.yml
+          name: prometheus-rules
+          readOnly: true
+          subPath: rules.yml
+      volumes:
+      - name: prometheus-data
+        persistentVolumeClaim:
+          claimName: prometheus-data-pvc
+      - configMap:
+          name: prometheus-config
+          items:
+            - key: prometheus.yml
+              path: prometheus.yml
+        name: prometheus-config
+      - configMap:
+          name: prometheus-rules
+          items:
+            - key: rules.yml
+              path: rules.yml
+        name: prometheus-rules
+status: {}
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data-pvc
+  namespace: logging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 400Gi
+  storageClassName: default
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: prometheus-rules
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+data:
+  rules.yml: |-
+    groups:
+      - name: nucleus-rules
+        rules:
+          - record: nucleus_apdex_score
+            expr: (sum(rate(http_request_duration_seconds_bucket{le="0.5"}[5m])) by (component) + sum(rate(http_request_duration_seconds_bucket{le="2"}[5m])) by (component) ) / 2 / sum(rate(http_request_duration_seconds_count[5m])) by (component){% raw %}
+      - name: POD_Edge_Servers_Restart	
+        rules:	
+        - alert: POD_Edge_Servers 	
+          expr: round (sum(rate(kube_pod_container_status_restarts_total{job="kube-state-metrics",container=~"edge-server-ddp"}[1h])) by (Value,pod,namespace) * 3600 > 20 ) 	
+          for: 10m	
+          labels:	
+            severity: warning	
+          annotations:	
+            summary: Edge servers Pod is restarting frequently	
+            description: Pod {{ $labels.namespace }}/{{ $labels.pod }} was restarted {{ $value }}      	
+      - name: Pod-Restart-Loop-alert-App	
+        rules:	
+        - alert: Pod_App_Servers 	
+          expr: round (sum(rate(kube_pod_container_status_restarts_total{job="kube-state-metrics"}[1h])) by (Value,pod,namespace) * 3600 > 15 ) 	
+          for: 10m	
+          labels:	
+            severity: warning	
+          annotations:	
+            summary: App servers Pod is restarting frequently	
+            description: Pod {{ $labels.namespace }}/{{ $labels.pod }} was pod restarted {{ $value }}
+      - name: mongo
+        rules:
+        - alert: Mongo Disk Space Low
+          expr: node_filesystem_avail_bytes{job=~".*mongo.*",mountpoint=~"/|/data"} / node_filesystem_size_bytes{job=~".*mongo.*",mountpoint=~"/|/data"} * 100 < 10
+          labels:
+            severity: page
+          annotations:
+            summary: Disk Space is low on {{ $labels.job }} - {{ $labels.mountpoint }}
+{% endraw %}
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: prometheus-config
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+data:
+  prometheus.yml: |-
+    global:
+      scrape_interval: 10s
+      scrape_timeout: 10s
+      evaluation_interval: 10s
+    rule_files:
+      - /etc/prometheus/rules.yml
+    alerting:
+      alertmanagers:
+        - static_configs:
+          - targets:
+            - alertmanager-prometheus:9093
+    scrape_configs:
+    - job_name: 'prometheus'
+      static_configs:
+      - targets: ['localhost:9090']
+    # Deployment Jobs 
+
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+  - nonResourceURLs:
+      - "/metrics"
+    verbs:
+      - get
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: logging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: logging

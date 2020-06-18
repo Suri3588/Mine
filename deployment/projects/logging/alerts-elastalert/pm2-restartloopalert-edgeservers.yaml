@@ -1,0 +1,18 @@
+---
+name: Port PM2 Restart Loop Alert for Edge Servers
+type: frequency
+index: filebeat-*
+num_events: 1
+timeframe:
+  minutes: 5
+realert:
+  hours: 12
+query_key: pm2.status.app
+filter:
+- query:
+    query_string:
+      query: " host.hostname : * and pm2.status.upseconds < 60  and pm2.status.recent_restarts > 3 "
+alert_subject: "One or more PM2 application is stuck in a restart loop. Deployment:{0} Edge Server: {1} App: {2}check 'pm2 status' for a full report "
+- deployment
+- host.hostname
+- pm2.status.app

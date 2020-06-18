@@ -1,0 +1,9 @@
+- name: Update Aptitude to latest
+  become: yes
+  apt:
+    name: aptitude 
+    state: latest
+  register: apt_status
+  retries: 3
+  delay: 90
+  until: apt_status is success

@@ -1,0 +1,11 @@
+.terraform
+terraform.tfstate*
+temp/
+secretfiles/
+secrets.auto.tfvars
+playbook.retry
+
+# remove the below to commit the deployment to a branch
+#modules/
+#projects/
+#terraform/

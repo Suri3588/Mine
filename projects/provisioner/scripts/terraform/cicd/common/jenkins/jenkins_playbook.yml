@@ -1,0 +1,17 @@
+---
+- name: Setup
+  hosts: all
+  become: yes
+  gather_facts: true
+  vars_files:
+    - secrets.yml
+    - jenkins_vars.yml
+
+  roles:
+    - baselineSecurity
+    - mountDataDirectory
+    - geerlingguy.java
+    - geerlingguy.jenkins
+    - nginx
+    - proxyBase
+    - jenkins

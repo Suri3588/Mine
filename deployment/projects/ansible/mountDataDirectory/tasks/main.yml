@@ -1,0 +1,79 @@
+---
+
+# Requires the following facts to be set:
+#
+#     data_partition_lun - The LUN of the drive to create partition on
+#     data_partition_fs - File system to format data partition with.
+#     data_partition_mountpoint - Directory to mount data partition under.
+#     data_partition_mountopts - Fstab mount options for this partition.
+#     data_mount_owner - Owner of the data partition.
+#     data_mount_group - Group of the data partition.
+#     data_mount_mode - Mode of the data partition.
+
+- name: Determine if {{ data_partition_mountpoint }} is already mounted
+  command: mountpoint -q {{ data_partition_mountpoint }}
+  register: data_mounted
+  failed_when: False
+  changed_when: False
+
+- name: Create {{ data_partition_fs }} filesystem on data disk
+  become: yes
+  filesystem:
+    fstype: "{{ data_partition_fs }}"
+    dev: "/dev/disk/azure/scsi1/lun{{ data_partition_lun }}"
+  when: 
+    - data_mounted.rc != 0
+    - data_partition_fs != "swap"
+
+- name: Create {{ data_partition_mountpoint }} mount point directory
+  become: yes
+  file:
+    path: "{{ data_partition_mountpoint }}"
+    state: directory
+    owner: "{{ data_mount_owner }}"
+    group: "{{ data_mount_group }}"
+    mode: "{{ data_mount_mode }}"
+  when: 
+    - data_mounted.rc != 0
+    - data_partition_fs != "swap"
+
+- name: Mount {{ data_partition_mountpoint }} directory
+  become: yes
+  mount:
+    path: "{{ data_partition_mountpoint }}"
+    src: /dev/disk/azure/scsi1/lun{{ data_partition_lun }}
+    opts: "{{ data_partition_mountopts }}"
+    fstype: "{{ data_partition_fs }}"
+    state: mounted
+  when: 
+    - data_mounted.rc != 0
+    - data_partition_fs != "swap"
+
+- name: Copy mountswap shell script
+  become: yes
+  template:
+    src: mountswap
+    dest: "/usr/local/bin/mountswap"
+    owner: root
+    group: root
+    mode: 0744
+  when: data_partition_fs == "swap"
+
+- name: Copy mountswap service config
+  become: yes
+  copy:
+    src: mountswap.service
+    dest: "/etc/systemd/system/mountswap.service"
+    owner: root
+    group: root
+    mode: 0644
+  when: data_partition_fs == "swap"
+
+- name: Starting and enabling the mountswap service
+  become: yes
+  service:
+    name: mountswap
+    enabled: yes
+    use: service
+    state: started
+  when: data_partition_fs == "swap"

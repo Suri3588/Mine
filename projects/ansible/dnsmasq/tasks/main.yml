@@ -1,0 +1,11 @@
+- name: Update apt
+  become: true
+  apt:
+    upgrade: yes
+    update_cache: yes
+
+- name: Install dnsmasq
+  become: yes
+  apt:
+    name: dnsmasq
+    state: latest

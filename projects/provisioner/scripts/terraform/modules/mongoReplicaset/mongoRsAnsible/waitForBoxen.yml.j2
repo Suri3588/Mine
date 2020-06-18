@@ -1,0 +1,37 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+
+  tasks:
+  - name: Waiting on Jump Box
+    local_action: wait_for host={{ jumpIp }} state=started port=22 delay=30 timeout=300 connect_timeout=15
+
+  - name: Waiting on {{ mongos[0]['name'] }}
+    wait_for:
+      host: "{{ mongos[0]['ipAddress'] }}"
+      state: started
+      port: 22
+      delay: 30
+      timeout: 300
+      connect_timeout: 15
+    delegate_to: "{{ jumpIp }}"
+
+  - name: Waiting on {{ mongos[1]['name'] }}
+    wait_for:
+      host: "{{ mongos[1]['ipAddress'] }}"
+      state: started
+      port: 22
+      delay: 30
+      timeout: 300
+      connect_timeout: 15
+    delegate_to: "{{ jumpIp }}"
+
+  - name: Waiting on {{ mongos[2]['name'] }}
+    wait_for:
+      host: "{{ mongos[2]['ipAddress'] }}"
+      state: started
+      port: 22
+      delay: 30
+      timeout: 300
+      connect_timeout: 15
+    delegate_to: "{{ jumpIp }}"

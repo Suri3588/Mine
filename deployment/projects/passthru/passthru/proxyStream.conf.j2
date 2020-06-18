@@ -1,0 +1,7 @@
+{% if isSharedService == 'true' %}
+server {
+  listen 24224;
+  proxy_pass {{ ingressIp }}:24224;
+  error_log  /{{ USER }}/log/nginx/stream.log info;
+}
+{% endif %}

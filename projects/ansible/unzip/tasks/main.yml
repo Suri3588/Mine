@@ -1,0 +1,8 @@
+- name: Install unzip
+  apt:
+    name: unzip
+    state: latest
+  register: apt_status
+  retries: 3
+  delay: 90
+  until: apt_status is success

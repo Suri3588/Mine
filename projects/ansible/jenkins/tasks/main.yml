@@ -1,0 +1,142 @@
+- name: Check that inputs have been set via ansible extra vars
+  fail:
+    msg: Need to specifiy {{ item }} in the ansible extra vars
+  with_items:
+    - "SubscriptionId"
+    - "DevSubscriptionId"
+    - "ResourceGroupName"
+    - "ResourceGroupLocation"
+    - "GitHash"
+    - "GithubProdPwd"
+    - "GithubProdUser"
+    - "NucleusBuilderPwd"
+    - "JenkinsAadClientId"
+    - "JenkinsAadAPIKey"
+    - "JenkinsAadTenantId"
+    - "JenkinsSvcTenantId"
+    - "JenkinsSvcClientId"
+    - "JenkinsSvcAPIKey"
+    - "JenkinsDevSvcTenantId"
+    - "JenkinsDevSvcClientId"
+    - "JenkinsDevSvcAPIKey"
+    - "DevRegistryUrl"
+    - "JiraPwd"
+    - "JiraUsername"
+    - "HOME"
+    - "USER"
+  when: item is undefined
+
+- name: Generate dhparams.pem as needed
+  become: yes
+  shell: "{{ HOME }}/installDhParams.sh /{{ USER }}/ssl/private"
+  args:
+    creates: "/{{ USER }}/ssl/private/dhparams.pem"
+  
+- name: Copy Config As Code file
+  become: yes
+  template:
+    src: jenkins.yaml.j2
+    dest: "{{ HOME }}/jenkins.yaml"
+
+- name: Ensure Job Directories exit
+  become: yes
+  file:
+    path: /var/lib/jenkins/jobs/{{ item }}
+    state: directory
+    owner: "{{ jenkins_process_user }}"
+    group: "{{ jenkins_process_group }}"
+  loop: "{{ pull_request_jobs + pipeline_jobs }}"
+
+- name: Copy pull request multi-branch job configs
+  become: yes
+  template:
+    src: multi-branch-pr-job.xml.j2
+    dest: /var/lib/jenkins/jobs/{{ item }}/config.xml
+    owner: "{{ jenkins_process_user }}"
+    group: "{{ jenkins_process_group }}"
+  loop: "{{ pull_request_jobs }}"
+
+- name: Copy pipeline job configs
+  become: yes
+  template:
+    src: pipeline-job.xml.j2
+    dest: /var/lib/jenkins/jobs/{{ item }}/config.xml
+    owner: "{{ jenkins_process_user }}"
+    group: "{{ jenkins_process_group }}"
+  loop: "{{ pipeline_jobs }}"
+
+- name: Repermission the jenkins' home directory
+  become: true
+  file: 
+    path: "/var/lib/jenkins"
+    owner: "{{ jenkins_process_user }}"
+    group: "{{ jenkins_process_group }}"
+
+- name: Create Build and Workspace Dirs on Data Drive
+  become: yes
+  file:
+    path: /data/{{ item }}
+    state: directory
+    owner: "{{ jenkins_process_user }}"
+    group: "{{ jenkins_process_group }}"
+  loop:
+    - workspace
+    - builds
+
+- name: stop jenkins
+  service: name=jenkins state=stopped
+
+- name: Change workspace dir settings
+  become: true
+  lineinfile:
+    path: /var/lib/jenkins/config.xml
+    regexp: '<workspaceDir>'
+    state: present
+    line: '<workspaceDir>/data/workspace/${ITEM_FULL_NAME}</workspaceDir>'
+
+- name: Change builds dir settings
+  become: true
+  lineinfile:
+    path: /var/lib/jenkins/config.xml
+    regexp: '<buildsDir>'
+    state: present
+    line: '<buildsDir>/data/builds/${ITEM_FULL_NAME}</buildsDir>'
+
+- name: start jenkins
+  service: name=jenkins state=started
+
+- name: Copy base nginx.conf
+  become: true
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    mode: 0664
+
+- name: Copy proxyServer.conf routing definition
+  become: true
+  template:
+    src: proxyServer.conf.j2
+    dest: /etc/nginx/conf.d/proxyServer.conf
+    mode: 0664
+
+- name: Copy proxy.conf upstream hosts definition
+  become: true
+  copy:
+    src: proxy.conf
+    dest: /etc/nginx/upstream-hosts/proxy.conf
+    mode: 0664
+
+- name: Restart nginx
+  become: true
+  service:
+    name: nginx
+    state: restarted
+
+- name: pause for jenkins restart
+  pause:
+    minutes: 2
+
+- name: Remove the Jenkins Config
+  file:
+    path: "{{ HOME }}/jenkins.yaml"
+    state: absent

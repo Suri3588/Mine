@@ -1,0 +1,10 @@
+if ((db.system.users.find({ "user" : "{{ secrets.mongoExporterUsername }}" }).count()) == 0 ) { 
+    db.createUser({
+        user: '{{ secrets.mongoExporterUsername }}', 
+        pwd: '{{ secrets.mongoExporterPassword }}',
+        roles: [
+            { role: "clusterMonitor", db: "admin" },
+            { role: "read", db: "local" } 
+        ]
+    });
+}

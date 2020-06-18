@@ -1,0 +1,50 @@
+- name: Install NGINX repository key
+  become: yes
+  apt_key:
+    url: http://nginx.org/keys/nginx_signing.key
+    state: present
+
+- name: Add NGINX repository to apt
+  become: yes
+  lineinfile:
+    path: /etc/apt/sources.list
+    line: "deb http://nginx.org/packages/mainline/ubuntu/ xenial nginx"
+    state: present
+
+- name: Update apt sources
+  become: yes
+  apt: 
+    upgrade: yes
+    update_cache: yes
+    cache_valid_time: 3600
+  register: apt_status
+  retries: 3
+  delay: 90
+  until: apt_status is success
+
+- name: Install NGINX
+  become: yes
+  apt:
+    name: nginx
+    state: latest
+  register: apt_status
+  retries: 3
+  delay: 90
+  until: apt_status is success
+
+- name: Configure logrotate for NGINX
+  become: yes
+  copy:
+    src: nginx.logrotate
+    dest: /etc/logrotate.d/
+    owner: root
+    mode: 0644
+    force: yes
+
+- name: Logrotate Daily 
+  cron:
+    name: Every day 03:30 log rotation
+    minute: "30"
+    hour: "3"
+    user: root
+    job: "/usr/sbin/logrotate -f /etc/logrotate.d/nginx.logrotate > /dev/null"

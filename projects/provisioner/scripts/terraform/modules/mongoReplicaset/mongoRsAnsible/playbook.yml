@@ -1,0 +1,128 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+
+  vars:
+    NUCLEUS_HOME: "/Users/mbrinkman/Development/Nucleus"
+    mongoDir: "{{ playbook_dir }}/../mongo"
+    jumpIp: "40.123.34.56"
+    login: "hubuser"
+
+  environment:
+    HOME: "{{ HOME }}"
+
+  roles:
+
+  tasks:
+  - name: Delete the new directory
+    file:
+      path: "{{ playbook_dir }}/../mongo"
+      state: absent
+
+  - name: Create the directory
+    file:
+      path: "{{ playbook_dir }}/../mongo"
+      state: directory
+
+  - name: Copy in the code from the mongo role
+    copy:
+      src: "{{ NUCLEUS_HOME }}/devOps/library/roles/mongo/{{ item }}"
+      dest: "{{ mongoDir }}/{{ item }}"
+    with_items:
+      - disable-transparent-hugepages.sh
+      - generate_mongo.logrotate.sh
+      - generate_mongod.start.conf.sh
+      - generate_mongod.start.service.sh
+      - addReplicaSet.yml.j2
+      - mongo.yml.j2
+      - update_hosts.sh.j2
+
+  - name: Copy in the variables
+    copy:
+      src: "{{ playbook_dir }}/{{ item }}"
+      dest: "{{ mongoDir }}/{{ item }}"
+    with_items:
+      - ansible.cfg
+      - replVars.json
+      - monitoring.yml
+      - parsers.conf
+      - td-agent-bit.conf.j2
+      - upload.yml
+
+  - name: Copy in the template code
+    template:
+      src: "{{ playbook_dir }}/{{ item }}.j2"
+      dest: "{{ mongoDir }}/{{ item }}"
+    with_items:
+      - inventory
+      - ssh.cfg
+      - kubegroupMongo.json
+      - waitForBoxen.yml
+
+  - name: Re-perm ansible shell script
+    command: "chmod +x {{ mongoDir }}/{{ item }}"
+    with_items:
+      - generate_mongod.start.conf.sh
+      - generate_mongod.start.service.sh
+      - generate_mongo.logrotate.sh
+
+  - name: Render the templates
+    command: "python {{ NUCLEUS_HOME }}/devOps/library/scripts/renderJ2File.py {{ item }} kubegroupMongo.json"
+    args:
+      chdir: "{{ mongoDir }}"
+    with_items:
+      - addReplicaSet.yml.j2
+      - mongo.yml.j2
+      - td-agent-bit.conf.j2
+      - update_hosts.sh.j2
+
+  - name: Copy in the replicaset stuff
+    copy:
+      src: "{{ NUCLEUS_HOME }}/devOps/library/roles/mongoReplicaSet/{{ item }}"
+      dest: "{{ mongoDir }}/{{ item }}"
+    with_items:
+      - check-replicaset-health.js
+      - create_database.js.j2
+      - initialize-replicaset.js.j2
+      - seed-users.js.j2
+      - set-compatibility.js.j2
+      - tasks.main.yml.j2
+
+  - name: Copy in the final tasks tempalte
+    copy:
+      src: "{{ playbook_dir }}/tasks.final.yml.j2"
+      dest: "{{ mongoDir }}/tasks.final.yml.j2" 
+    
+  - name: Render the replicaset templates
+    command: "python {{ NUCLEUS_HOME }}/devOps/library/scripts/renderJ2File.py {{ item }} replVars.json"
+    args:
+      chdir: "{{ mongoDir }}"
+    with_items:
+      - create_database.js.j2
+      - initialize-replicaset.js.j2
+      - seed-users.js.j2
+      - set-compatibility.js.j2
+      - tasks.main.yml.j2
+      - tasks.final.yml.j2
+
+  - name: Fix the replicaset playbook
+    command: "sed -i 's/localhost/jump/g' {{ mongoDir }}/tasks.final.yml"
+
+  - name: Copy in the prometheus monitoring configuration stuff
+    copy:
+      src: "{{ NUCLEUS_HOME }}/devOps/library/roles/ansible/prometheus-mongodb/tasks/{{ item }}"
+      dest: "{{ mongoDir }}/{{ item }}"
+    with_items:
+      - mongodb_exporter.conf-j2.j2
+      - seed-exporter-user.js.j2
+
+  - name: Render the prometheus monitoring configuration templates
+    command: "python {{ NUCLEUS_HOME }}/devOps/library/scripts/renderJ2File.py {{ item }} replVars.json"
+    args:
+      chdir: "{{ mongoDir }}"
+    with_items:
+      - mongodb_exporter.conf-j2.j2
+      - seed-exporter-user.js.j2
+
+  - name: Rename the exporter conf
+    command: "mv {{ mongoDir }}/mongodb_exporter.conf-j2 {{ mongoDir }}/mongodb_exporter.conf.j2"

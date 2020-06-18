@@ -1,0 +1,156 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: ingress-nginx
+  namespace: ingress-nginx
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: {{ resourceGroup }}-ip
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  loadBalancerIP: {{ externalIngressIp }}
+  selector:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: https
+
+---
+
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: nginx-configuration
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+data:
+#   This is required/used by image viewers where the requests are made by HTTP2, 
+# the default value of max-requests is 1000, in the current implementation for a single client
+# nucleus client can go over 700 (on single browser time open), visit the issues NIX-14680 or NIX-14847
+# to see how this would manifest as errors in the application.
+#
+#  Node: Setting a higher number of connection here will result into using more memory in Nginx and may 
+# not be recommended. (See http://nginx.org/en/docs/http/ngx_http_v2_module.html#http2_max_requests)
+#
+  http2-max-requests: "100000"
+  http2-max-concurrent-streams: "100000"
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nginx-ingress-serviceaccount
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+
+---
+
+
+apiVersion: extensions/v1beta1 
+kind: Deployment
+metadata:
+  name: nginx-ingress-controller
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/part-of: ingress-nginx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ingress-nginx
+        app.kubernetes.io/part-of: ingress-nginx
+      annotations:
+        prometheus.io/port: "10254"
+        prometheus.io/scrape: "true"
+    spec:
+      nodeSelector:
+        agentpool: default
+      serviceAccountName: nginx-ingress-serviceaccount
+      containers:
+        - name: nginx-ingress-controller
+          image: quay.io/kubernetes-ingress-controller/nginx-ingress-controller:0.26.1
+          args:
+            - /nginx-ingress-controller
+            - --enable-ssl-chain-completion=false
+            - --configmap=$(POD_NAMESPACE)/nginx-configuration
+            - --enable-ssl-chain-completion=false
+            - --publish-service=$(POD_NAMESPACE)/ingress-nginx
+            - --annotations-prefix=nginx.ingress.kubernetes.io
+            - --default-backend-service=$(POD_NAMESPACE)/default-http-backend
+            - --default-ssl-certificate=$(POD_NAMESPACE)/tls-certificate
+          securityContext:
+            allowPrivilegeEscalation: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+            # www-data -> 33
+            runAsUser: 33
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KUBERNETES_PORT_443_TCP_ADDR
+              value: {{ k8sServiceHost }}
+            - name: KUBERNETES_PORT
+              value: tcp://{{ k8sServiceHost }}:443
+            - name: KUBERNETES_PORT_443_TCP
+              value: tcp://{{ k8sServiceHost }}:443
+            - name: KUBERNETES_SERVICE_HOST
+              value: {{ k8sServiceHost }}
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 10254
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 10254
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          volumeMounts:
+            - mountPath: /etc/nginx-ssl/dhparam
+              name: tls-dhparam-vol
+      volumes:
+        - name: tls-dhparam-vol
+          secret:
+            secretName: tls-dhparam
+            

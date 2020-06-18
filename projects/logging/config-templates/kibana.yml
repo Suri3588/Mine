@@ -1,0 +1,9 @@
+xpack.security.enabled: true
+server.host: 0.0.0.0
+
+elasticsearch:
+  hosts: ${ELASTICSEARCH_HOSTS}
+  requestTimeout: ${ELASTICSEARCH_REQUESTTIMEOUT}
+  username: elastic
+  password: ELASTICSEARCH_PASSWORD
+

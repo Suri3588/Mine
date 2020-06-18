@@ -1,0 +1,49 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: meteor-ui-ddp
+  namespace: nucleus
+  annotations:
+    nginx.ingress.kubernetes.io/upstream-vhost: $service_name.$namespace.svc.cluster.local
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "999999"
+    # TODO
+    # If you need to add more CSP info which is a certain deployment specific information,
+    # please add it on deployment branch directly (e.g. hub/ hub3/ statrad etc.)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "Content-Security-Policy: default-src 'self' 'unsafe-inline' 'unsafe-eval' *.{{ deployDomain }} blob:; style-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com; font-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.gstatic.com https://themes.googleusercontent.com http://themes.googleusercontent.com; connect-src 'self' https://dc.services.visualstudio.com/v2/track https://*.{{ deployDomain }} ws://*.{{ deployDomain }} wss://*.{{ deployDomain}} ws://localhost:* wss://localhost:* http://localhost:* http://localhost-1:* http://localhost-2:* http://localhost-3:* https://nucleussupport.wpengine.com:* https://dc.services.visualstudio.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ blob:; frame-src 'self' https://www.google.com/recaptcha/; img-src 'self' blob: data: https://localhost:* https://localhost-1:* https://localhost-2:* https://localhost-3:*{{ frameAncestors }}";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "Referrer-Policy: no-referrer";
+      more_set_headers "Feature-Policy: geolocation 'none'; midi 'none'; sync-xhr 'none'; microphone 'none'; camera 'none'; magnetometer 'none'; gyroscope 'none'; speaker 'self'; fullscreen 'self'; payment 'none'";
+    nginx.ingress.kubernetes.io/server-snippet: |
+      ssl_stapling on;
+      ssl_stapling_verify on;
+      resolver 8.8.8.8 8.8.4.4;
+    kubernetes.io/ingress.class: "nginx"
+  labels:
+    app.kubernetes.io/name: meteor-ui-ddp
+    app.kubernetes.io/part-of: nucleus
+spec:
+  tls:
+    - hosts:
+      - {{ dnsPrefix }}.{{ deployDomain }}
+      secretName: tls-certificate
+    - hosts:
+      - "*.{{ deployDomain }}"
+      secretName: tls-certificate
+  rules:
+  - host: {{ dnsPrefix }}.{{ deployDomain }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: meteor-ui-ddp
+          servicePort: 80
+  - host: "*.{{ deployDomain }}"
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: meteor-ui-ddp
+          servicePort: 80

@@ -1,0 +1,81 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: study-rollup
+  namespace: nucleus
+  labels:
+    app.kubernetes.io/name: study-rollup
+    app.kubernetes.io/part-of: nucleus
+spec:
+  replicas: 8
+  strategy:
+    rollingUpdate:
+      maxSurge: 6
+      maxUnavailable: 2
+  minReadySeconds: 5
+  template:
+    metadata:
+      labels:
+        app: study-rollup
+        deployment: {{ resourceGroup }}
+      annotations:
+        fluentbit.io/parser: nucleus
+        linkerd.io/inject: enabled
+    spec:
+      nodeSelector:
+        agentpool: ingestpool
+      hostAliases:
+      {% for mongo in mongos %}
+      - ip: "{{ mongo.ipAddress }}"
+        hostnames:
+        - "{{ mongo.name }}"
+      {% endfor %}
+      containers:
+      - name: study-rollup
+        image: {{ dockerRegistry }}{{ radconnectImage }}
+        imagePullPolicy: IfNotPresent
+        command:
+        - node
+        args:
+        - "--max-old-space-size=6144"
+        - "--expose-gc"
+        - "main.js"
+        resources:
+          requests:
+            cpu: "0.1"
+            memory: "500Mi"
+          limits:
+            cpu: "1"
+            memory: "2Gi" # We added this based on a conversation avaliable in (https://confluence.statrad.com/display/DevOps/K8s+nodes+and+services+resouces+configuration)
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/bash", "-c", "sleep 120"] # This is to improve a graceful shutdown
+        envFrom:
+        - configMapRef:
+            name: shared-config
+        - configMapRef:
+            name: study-rollup-config
+        env:
+        - name: MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: MONGO_URL
+        - name: NUCLEUS_INGESTION_MONGO_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secrets
+              key: NUCLEUS_INGESTION_MONGO_URL
+        - name: METEOR_SETTINGS
+          valueFrom:
+            secretKeyRef:
+              name: processing-pipeline-secrets
+              key: METEOR_SETTINGS
+        - name: APP_INSIGHTS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-insights-secrets
+              key: APP_INSIGHTS_KEY
+      imagePullSecrets:
+      - name: regcred

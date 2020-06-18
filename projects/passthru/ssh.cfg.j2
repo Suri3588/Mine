@@ -1,0 +1,7 @@
+Host {{ passthruIp }}
+  ProxyCommand    ssh -o UserKnownHostsFile=/dev/null -o 'StrictHostKeyChecking no' -i {{ sshPrivateKeyFile }} -W %h:%p {{ login }}@{{ jumpIp }}
+
+Host *
+  ControlMaster  auto
+  ControlPath    ~/.ssh/mux-%r@%h:%p
+  ControlPersist 15m

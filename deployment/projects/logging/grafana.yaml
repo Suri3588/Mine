@@ -1,0 +1,232 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: logging
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/auth-url: "https://grafana-shared-services-qe.nucleushealthdev.io/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://grafana-shared-services-qe.nucleushealthdev.io/oauth2/start?rd=$escaped_request_uri"
+spec:
+  tls:
+    - hosts:
+      - grafana-shared-services-qe.nucleushealthdev.io
+      secretName: tls-certificate
+  rules:
+    - host: grafana-shared-services-qe.nucleushealthdev.io
+      http:
+        paths:
+          - path: /
+            backend:
+              serviceName: grafana
+              servicePort: 80
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: grafana-oauth2-proxy
+  namespace: ingress-nginx
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - host: grafana-shared-services-qe.nucleushealthdev.io
+      http:
+        paths:
+          - path: /oauth2
+            backend:
+              serviceName: oauth2-proxy
+              servicePort: 80
+  tls:
+  - hosts:
+    - grafana-shared-services-qe.nucleushealthdev.io
+    secretName: tls-certificate
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: logging
+data:
+  grafana.ini: |
+    [analytics]
+    check_for_updates = true
+    [log]
+    mode = console
+    [paths]
+    data = /var/lib/grafana/data
+    logs = /var/log/grafana
+    plugins = /var/lib/grafana/plugins
+    provisioning = /etc/grafana/provisioning
+    [auth]
+    oauth_auto_login = true
+    [auth.anonymous]
+    enabled = true
+    org_name = Main Org.
+    
+  dashboardproviders.yaml: |
+    apiVersion: 1
+    providers:
+    - disableDeletion: false
+      editable: true
+      folder: ""
+      name: default
+      options:
+        path: /var/lib/grafana/dashboards/default
+      orgId: 1
+      type: file
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: logging
+spec:
+  type: ClusterIP
+  ports:
+    - name: service
+      port: 80
+      protocol: TCP
+      targetPort: 3000
+  selector:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: logging
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: grafana-storage
+  namespace: logging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: default
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/part-of: logging
+  strategy:
+    type: RollingUpdate    
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/part-of: logging
+    spec:
+      serviceAccountName: grafana
+      securityContext:
+        fsGroup: 472
+        runAsUser: 472
+      nodeSelector:
+        agentpool: monpool
+      containers:
+        - name: grafana
+          image: "grafana/grafana:5.3.2"
+          imagePullPolicy: IfNotPresent
+          resources: {}
+          volumeMounts:
+            - name: config
+              mountPath: "/etc/grafana/grafana.ini"
+              subPath: grafana.ini
+              readOnly: true
+            - name: ldap
+              mountPath: "/etc/grafana/ldap.toml"
+              subPath: ldap.toml
+            - name: datasources
+              mountPath: "/etc/grafana/provisioning/datasources/datasources.yaml"
+              subPath: datasources.yaml
+              readOnly: true
+            - name: config
+              mountPath: "/etc/grafana/provisioning/dashboards/dashboardproviders.yaml"
+              subPath: dashboardproviders.yaml
+            - name: dashboards
+              mountPath: "/var/lib/grafana/dashboards/default"
+            - mountPath: "/var/lib/grafana"
+              name: storage
+          ports:
+            - name: service
+              containerPort: 80
+              protocol: TCP
+            - name: grafana
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana
+                  key: admin-password
+          livenessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 60
+            timeoutSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+      volumes:
+        - name: config
+          configMap:
+            name: grafana
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+        - name: datasources
+          secret:
+            secretName: grafana-datasources-config
+        - name: ldap
+          secret:
+            secretName: grafana
+            items:
+              - key: ldap-toml
+                path: ldap.toml
+        - name: storage
+          persistentVolumeClaim:
+            claimName: grafana-storage
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana
+  namespace: logging
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: logging

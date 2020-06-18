@@ -1,0 +1,156 @@
+resource "random_id" "passthru_jumpbox_boot_prefix" {
+  byte_length = 9
+}
+
+resource "azurerm_storage_account" "passthru_jumpbox_boot" {
+  name =                      "${random_id.passthru_jumpbox_boot_prefix.hex}boot"
+  resource_group_name =       azurerm_resource_group.{{ resourceGroup }}.name
+  location =                  azurerm_resource_group.{{ resourceGroup }}.location
+  account_tier =              "Standard"
+  account_replication_type =  "GRS"
+}
+
+module "publicIp" {
+  source               = "../{{ modulesDir }}/publicIp"
+
+  rsgName              = "{{ resourceGroup }}"
+  dnsPrefix            = "{{ dnsPrefix }}"
+  rsgLocation          = azurerm_resource_group.{{ resourceGroup }}.location
+}
+
+module "kubegroup" {
+  source = "../{{ modulesDir }}/kubegroup"
+
+  # THE FOLLOWING VALUES ARE REQUIRED BY TERRAFORM FOR CLUSTER CREATION, BUT ARE ALSO SUBJECT TO CHANGE OVER TIME.
+  # UNFORTUNATELY, TERRAFORM REQUIRES DESTROYING AND RECREATING THE CLUSTER WHENEVER THESE VALUES CHANGE.
+  # BECAUSE OF THIS WE HAVE MARKED THE ATTRIBUTES THAT USE THESE VARIABLES TO BE IGNORED IN THE MODULE FOR UPDATES.
+  # UPDATING OF THESE VARIABLES WILL BE PERFORMED VIA AZURE CLI IN OUR UPDATE SCRIPTS RATHER THAN BY TERRAFORM.
+  # SO WHILE THESE VALUES ARE CORRECT AT THE TIME OF INITIAL CREATION, THEY MAY BECOME STALE AND ARE NOT TO BE CONSIDERED CORRECT
+  # THE SOURCE OF TRUTH FOR THESE VALUES ARE THE CORROSPONDING SECRETS ENTRIES IN THE KEY VAULT, AND ARE SET AS ENVIRONMENT VARIABLES FOR UPDATES
+  akcPrincipal         = "{{ akcPrincipal }}"
+  akcPrincipalPassword = "{{ akcPrincipalPassword }}"
+  aksAadClientId       = "{{ aksAadClientId }}"
+  aksAadServerId       = "{{ aksAadServerId }}"
+  aksAadServerSecret   = "{{ aksAadServerSecret }}"
+  aksAadTenantId       = "{{ aksAadTenantId }}"
+
+
+  dnsPrefix            = "{{ dnsPrefix }}"
+  rsgName              = "{{ resourceGroup }}"
+  kubernetes_version   = var.kubernetes_version
+  clusterAdminGuid     = var.clusterAdminGuid
+  clusterViewerGuid    = var.clusterViewerGuid
+  regaksPublicKey      = var.regaksPublicKey
+  publicIpRsgId        = module.publicIp.publicIpRsgId
+  rsgLocation          = azurerm_resource_group.{{ resourceGroup }}.location
+  rsgSubnetId          = azurerm_subnet.{{ resourceGroupLowered }}__k8s-subnet.id
+  vnetId               = azurerm_virtual_network.{{ resourceGroupLowered }}__{{ resourceGroup }}-network.id
+
+  dependencies = [ module.publicIp.depended_on ]
+
+  additional_node_pools = {
+    ingestpool = {
+      node_count                     = 2
+      vm_size                        = "Standard_DS3_v2" # We are reducing ingestpool in favor of bigger dataprocpool
+      node_os                        = "Linux"
+      zones                          = null
+      max_pods                       = 30
+      os_disk_size_gb                = 128
+      taints                         = null
+      cluster_auto_scaling           = false
+      cluster_auto_scaling_min_count = null
+      cluster_auto_scaling_max_count = null
+    }
+    dataprocpool = {
+      node_count                     = 4 # Image data service and edgeServerDdb run here they are both heavy resource usage that is why here we have the double of the other nodes
+      vm_size                        = "Standard_DS4_v2" 
+      node_os                        = "Linux"
+      zones                          = null
+      max_pods                       = 30
+      os_disk_size_gb                = 128
+      taints                         = null
+      cluster_auto_scaling           = false
+      cluster_auto_scaling_min_count = null
+      cluster_auto_scaling_max_count = null
+    }
+    uipool = {
+      node_count                     = 2
+      vm_size                        = "Standard_DS3_v2"
+      node_os                        = "Linux"
+      zones                          = null
+      max_pods                       = 30
+      os_disk_size_gb                = 128
+      taints                         = null
+      cluster_auto_scaling           = false
+      cluster_auto_scaling_min_count = null
+      cluster_auto_scaling_max_count = null
+    }
+    monpool = {
+      node_count                     = 1
+      vm_size                        = "Standard_DS11_v2"
+      node_os                        = "Linux"
+      zones                          = null
+      max_pods                       = 30
+      os_disk_size_gb                = 128
+      taints                         = null
+      cluster_auto_scaling           = false
+      cluster_auto_scaling_min_count = null
+      cluster_auto_scaling_max_count = null
+    }
+  }
+}
+
+module "jumpbox" {
+  source               = "../{{ modulesDir }}/jumpbox"
+
+  nvmVersion           = "0.33.8"
+  nodeVersion          = "10.13.0"
+  envTag               = "{{ resourceGroup }} Jump Box"
+
+  login                = var.login
+  classCPlusOffset     = var.classCPlusOffset
+  jumpboxSecretsFile   = var.jumpboxSecretsFile
+  deploymentDir        = var.deploymentDir
+  projectsDir          = var.projectsDir
+  sshPublicKey         = var.sshPublicKey
+  sshPrivateKeyFile    = var.sshPrivateKeyFile
+  rsgDiagSAEndpoint    = azurerm_storage_account.passthru_jumpbox_boot.primary_blob_endpoint
+  rsgName              = azurerm_resource_group.{{ resourceGroup }}.name
+  rsgLocation          = azurerm_resource_group.{{ resourceGroup }}.location
+  rsgSubnetId          = azurerm_subnet.{{ resourceGroupLowered }}__front-end-subnet.id
+}
+
+module "passthru" {
+  source                    = "../{{ modulesDir }}/passthru"
+
+  passthruSize              = "Standard_DS11_v2"
+  envTag                    = "{{ resourceGroup }} Passthru"
+  passthruIp                = "{{ passthruIp }}"
+  fluentdDest		            = "{{ passthruIp }}"
+  mongo1Ip                  = "{{ mongos[0]['ipAddress'] }}"
+  mongo2Ip                  = "{{ mongos[1]['ipAddress'] }}"
+  mongo3Ip                  = "{{ mongos[2]['ipAddress'] }}"
+  
+  login                     = var.login
+  classCPlus                = var.classCPlus
+  classCPlusOffset          = var.classCPlusOffset
+  ingressIp                 = var.ingressIp
+  isSharedService           = var.isSharedService
+  deploymentDir             = var.deploymentDir
+  projectsDir               = var.projectsDir
+  passthruSecretsFile       = var.passthruSecretsFile
+  passthruLocalSecretsFile  = var.passthruLocalSecretsFile
+  sshPublicKey              = var.sshPublicKey
+  sshPrivateKeyFile         = var.sshPrivateKeyFile
+  sslCertificate            = var.sslCertificate
+  sslCertificateKey         = var.sslCertificateKey
+  proxyServerName           = var.proxyServerName
+  rootCertificate           = var.rootCertificate
+  jumpIp                    = module.jumpbox.jumpIp
+  rsgDiagSAEndpoint         = azurerm_storage_account.passthru_jumpbox_boot.primary_blob_endpoint
+  rsgName                   = azurerm_resource_group.{{ resourceGroup }}.name
+  rsgLocation               = azurerm_resource_group.{{ resourceGroup }}.location
+  rsgSubnetId               = azurerm_subnet.{{ resourceGroupLowered }}__back-end-subnet.id
+  
+}
+

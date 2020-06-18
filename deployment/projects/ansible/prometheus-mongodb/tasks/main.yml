@@ -1,0 +1,45 @@
+- name: create group
+  become: true
+  group:
+    name: prometheus
+    state: present
+- name: create user
+  become: true
+  user:
+    name: prometheus
+    group: prometheus
+    createhome: no
+    system: yes
+    state: present
+- name: create opt directory for prometheus
+  become: true
+  file:
+    path: /opt/prometheus
+    state: directory
+- name: download mongodb exporter
+  become: true
+  get_url:
+    url: https://installpackages20190301.blob.core.windows.net/mongodb-exporter/mongodb_exporter-0.6.2.linux-amd64.tar.gz
+    dest: /opt/prometheus
+- name: unarchive node exporter
+  become: true
+  unarchive:
+    remote_src: yes
+    src: /opt/prometheus/mongodb_exporter-0.6.2.linux-amd64.tar.gz
+    dest: /opt/prometheus
+- name: create symlink to mongodb exporter
+  become: true
+  file:
+    path: /usr/bin/mongodb_exporter
+    state: link
+    src: /opt/prometheus/mongodb_exporter-0.6.2.linux-amd64/mongodb_exporter
+- name: install unit file to systemd
+  become: true
+  template:
+    src: mongodb_exporter.service
+    dest: /etc/systemd/system/mongodb_exporter.service
+- name: create directory to hold configuraiton file
+  become: true
+  file:
+    path: /etc/systemd/system/mongodb_exporter.d
+    state: directory

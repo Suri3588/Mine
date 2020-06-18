@@ -1,0 +1,41 @@
+- name: Configure syslog to ignore Azure time updates
+  become: yes
+  lineinfile:
+    path: /etc/rsyslog.d/15-excludetime.conf
+    line: ':msg, contains, "Time has been changed" ~'
+    create: yes
+    state: present
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Restart rsyslog
+  become: yes
+  service:
+    name: rsyslog
+    state: restarted
+
+- name: update and upgrade apt packages
+  become: yes
+  apt: 
+    upgrade: yes
+    update_cache: yes
+    cache_valid_time: 3600
+  register: apt_status
+  retries: 3
+  delay: 90
+  until: apt_status is success
+        
+- name: Install unattended-upgrades
+  become: yes
+  apt:
+    name: unattended-upgrades
+    state: latest
+  register: apt_status
+  retries: 3
+  delay: 90
+  until: apt_status is success
+        
+- name: Run unattended-upgrades
+  become: yes
+  command: unattended-upgrades

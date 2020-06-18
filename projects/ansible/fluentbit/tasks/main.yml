@@ -1,0 +1,32 @@
+---
+#
+# Installing fluentbit  (td-agent-bit)
+#
+# Add fluentbit APT-repository
+- name: Add fluentbit apt-key
+  become: yes
+  apt_key:
+    url: "https://packages.fluentbit.io/fluentbit.key"
+    state: present
+
+- name: Adding fluentbit APT repository
+  become: yes
+  lineinfile:
+    path: /etc/apt/sources.list.d/ts-agent-bit.list
+    line: 'deb https://packages.fluentbit.io/ubuntu/xenial xenial main'
+    create: yes
+    state: present
+    owner: root
+    group: root
+    mode: 0644
+
+# Install fluenttbit
+- name: Update repositories cache and install fluentbit
+  become: yes
+  apt:
+    name: td-agent-bit
+    update_cache: yes
+  register: apt_status
+  retries: 3
+  delay: 90
+  until: apt_status is success

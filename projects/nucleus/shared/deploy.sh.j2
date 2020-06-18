@@ -1,0 +1,47 @@
+#!/bin/bash
+
+while [ -n "$1" ]; do
+	case "$1" in
+		"--registryUser")
+			shift
+			REGISTRY_USER="$1"
+			shift
+			;;
+		"--registryPassword")
+			shift
+			REGISTRY_PASSWORD="$1"
+			shift
+			;;
+		*)
+			echo "Error: Unexpected command: $1" 1>&2
+			exit 1
+	esac
+done
+
+scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+pushd $scriptDir
+
+kubectl apply -f namespace.yaml
+
+kubectl -n ingress-nginx get secret tls-certificate --export -o yaml | kubectl -n nucleus apply -f -
+
+kubectl -n nucleus get secrets regcred 2> /dev/null
+if [ $? -ne 0 ]; then
+	if [ -z "$REGISTRY_USER" ]; then
+		read -p  'Nucleus Registry Username: ' userVar
+	else
+		userVar="$REGISTRY_USER"
+	fi
+
+	if [ -z "$REGISTRY_PASSWORD" ]; then
+		read -sp 'Nucleus Registry Password: ' passVar
+	else
+		passVar="$REGISTRY_PASSWORD"
+	fi
+	
+	kubectl -n nucleus create secret docker-registry regcred --docker-server={{ dockerRegistry }} --docker-username=$userVar --docker-password=$passVar
+fi
+
+kubectl -n nucleus apply -f shared-config.yaml
+
+popd
